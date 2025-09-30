@@ -1,7 +1,6 @@
 # docker start -ai eloquent_hypatia
 
-from dolfin import *
-from dolfin_adjoint import *
+import dolfinx
 
 import numpy as np
 from math import sqrt
