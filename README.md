@@ -20,7 +20,7 @@ You can then easily deactivate/reactivate it with:
 
 ## Relevant Repositories
 - `dolfin-adjoint repo`: https://github.com/dolfin-adjoint/dolfin-adjoint
-- `dolfinx repo`: https://github.com/FEniCS/dolfinx
+- `dolfinx repo`: https://github.com/FEniCS/dolfinx (this contains both the Python and C++ interfaces; I am going to try solving with the C++ interface as it is more verbose)
 
 ## Relevant Code Examples
 - `dolfinx python tutorials`: https://docs.fenicsproject.org/dolfinx/v0.9.0/python/demos.html
