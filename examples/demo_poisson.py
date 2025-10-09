@@ -91,14 +91,14 @@ import time
 # <dolfinx.fem.FunctionSpace>` $V$ on the mesh.
 
 # +
-def run_poisson_example():
+def run_poisson_example(points_per_dim):
 
     time_start = time.perf_counter()
 
     msh = mesh.create_rectangle(
         comm=MPI.COMM_WORLD,
-        points=((0.0, 0.0), (2.0, 1.0)),
-        n=(32, 16),
+        points=((0.0, 0.0), (2.0, 2.0)),
+        n=(points_per_dim, points_per_dim),
         cell_type=mesh.CellType.triangle,
     )
     V = fem.functionspace(msh, ("Lagrange", 1))
