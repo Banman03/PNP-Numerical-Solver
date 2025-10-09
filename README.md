@@ -17,6 +17,13 @@ You can then easily deactivate/reactivate it with:
 
 `conda activate <environment-name>`
 
+## Using Firedrake
+Because dolfinx does not support dolfin-adjoint, I am exploring the use of Firedrake as an alternative.
+
+This is because there exists an alternative algorithmic differentiation tool, Pyadjoint, that is built on Firedrake.
+
+To create/activate the conda environment, run the same commands as above, except run `conda install -c `
+
 
 ## Relevant Repositories
 - `dolfin-adjoint repo`: https://github.com/dolfin-adjoint/dolfin-adjoint
@@ -28,3 +35,5 @@ You can then easily deactivate/reactivate it with:
 ## Relevant Papers
 - `Paper detailing the PNP equations with maufactured solutions with convergence results`: https://arxiv.org/pdf/2105.01163
 - `Paper detailing the PNP model`: https://pmc.ncbi.nlm.nih.gov/articles/PMC3122111/
+- `Paper detailing reasons why Firedrake might be preferred over FEniCSx`: https://www.osti.gov/servlets/purl/2370161
+- `Paper detailing automatic adjoints in Firedrake (automatic disjoint methods are not supported in FEniCSx)`: https://joss.theoj.org/papers/10.21105/joss.01292
