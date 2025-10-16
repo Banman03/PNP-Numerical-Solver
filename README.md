@@ -22,7 +22,9 @@ Because dolfinx does not support dolfin-adjoint, I am exploring the use of Fired
 
 This is because there exists an alternative algorithmic differentiation tool, Pyadjoint, that is built on Firedrake.
 
-To create/activate the conda environment, run the same commands as above, except run `conda install -c `
+To create/activate the conda environment, run the same commands as above in order to activate or deactivate it.
+
+Here is a link to detailed installation instructions: `https://www.firedrakeproject.org/install.html`
 
 
 ## Relevant Repositories
