@@ -26,6 +26,13 @@ To create/activate the conda environment, run the same commands as above in orde
 
 Here is a link to detailed installation instructions: `https://www.firedrakeproject.org/install.html`
 
+### In Docker
+This is the easiest method (in my opinion) of running Firedrake.
+
+To pull, the image, run `docker pull firedrakeproject/firedrake:latest`
+
+Once pulled, run the image using `docker run -it firedrakeproject/firedrake:latest`. (This runs the container with root privileges, so be careful with any commands you run while the container has elevated privileges)
+
 
 ## Relevant Repositories
 - `dolfin-adjoint repo`: https://github.com/dolfin-adjoint/dolfin-adjoint
