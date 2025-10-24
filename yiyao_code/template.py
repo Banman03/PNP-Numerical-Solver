@@ -1,6 +1,6 @@
 # https://fenicsproject.discourse.group/t/how-to-create-a-source-term-that-is-a-spatial-function/11074
 # optimization that works well with fem?
-
+print("here")
 # -*- coding:utf-8 -*-
 import ufl 
 import dolfinx
