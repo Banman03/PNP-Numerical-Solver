@@ -31,7 +31,10 @@ This is the easiest method (in my opinion) of running Firedrake.
 
 To pull, the image, run `docker pull firedrakeproject/firedrake:latest`
 
-Once pulled, run the image using `docker run -it firedrakeproject/firedrake:latest`. (This runs the container with root privileges, so be careful with any commands you run while the container has elevated privileges)
+Once pulled, run the image using `docker run -it --rm \
+    -v /home/banman03/Euclid/AdaLovelace/pp/PNP-Numerical-Solver:/home/firedrake/shared \
+    firedrakeproject/firedrake:latest
+`. (This runs the container with root privileges as well as mounts your local files within the docker container so that your files can call the tooling within the container. It runs as root so be careful with any commands you run while the container has elevated privileges)
 
 
 ## Relevant Repositories
