@@ -49,3 +49,4 @@ Once pulled, run the image using `docker run -it --rm \
 - `Paper detailing the PNP model`: https://pmc.ncbi.nlm.nih.gov/articles/PMC3122111/
 - `Paper detailing reasons why Firedrake might be preferred over FEniCSx`: https://www.osti.gov/servlets/purl/2370161
 - `Paper detailing automatic adjoints in Firedrake (automatic disjoint methods are not supported in FEniCSx)`: https://joss.theoj.org/papers/10.21105/joss.01292
+- `Paper detailing using firedrake.adjoint for parameter inference': https://www.sciencedirect.com/science/article/pii/S2405896321014609
