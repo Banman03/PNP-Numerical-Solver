@@ -50,3 +50,4 @@ Once pulled, run the image using `docker run -it --rm \
 - `Paper detailing reasons why Firedrake might be preferred over FEniCSx`: https://www.osti.gov/servlets/purl/2370161
 - `Paper detailing automatic adjoints in Firedrake (automatic disjoint methods are not supported in FEniCSx)`: https://joss.theoj.org/papers/10.21105/joss.01292
 - `Paper detailing using firedrake.adjoint for parameter inference': https://www.sciencedirect.com/science/article/pii/S2405896321014609
+- `Paper detailing how to use the adjoint method for sensitivity analysis`: https://eartharxiv.org/repository/object/2599/download/5274/

@@ -62,3 +62,6 @@ print(round(J_new, 3))
 get_working_tape().progress_bar = ProgressBar
 
 dJ = Jhat.derivative()
+
+
+# now let's perform some parameter inference :))))
