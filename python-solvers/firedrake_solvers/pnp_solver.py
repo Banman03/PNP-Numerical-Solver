@@ -1,145 +1,105 @@
-#!/usr/bin/env python3
-# firedrake_equiv.py
-# Converted from dolfinx -> firedrake
+# Firedrake skeleton (tested for structure; adapt parameters & mesh)
 from firedrake import *
-import numpy as np
-from mpi4py import MPI
 
-# Physical constants (same as original)
-epsilon0  = 8.8541878128e-12
-e0        = 1.60217663e-19
-N_A       = 6.0221408e+23
-kB        = 1.380649e-23
-pot       = -1.2
-T         = 2.98e2
-pzc       = 0.0
-potential = (pot - pzc) * e0 / kB / T
-delta_RP  = 3.2e-10
-epsilon_RP= 4.17
-epsilon_s = 78.5
+# --- parameters (set these to your problem values)
+n_species = n = 2
+order = 1                          # CG1 for concentrations & potential
+dt = 1e-3
+F = 96485.3329
+R = 8.314462618
+T = 298.15
+F_over_RT = F/(R*T)
 
-n0   = N_A
-D0   = 1.0e-9
-lambda_d = np.sqrt(epsilon_s * epsilon0 * kB * T / e0**2 / n0)
-Ld   = lambda_d * 60.0
-factor_a = delta_RP * epsilon_s / epsilon_RP / lambda_d
-factor_1 = Ld / lambda_d
-factor_2 = Ld * lambda_d / D0
-ns_ions = 2
-Length_limit = Ld / lambda_d
+D_vals = [1.0, 1.0]                # list length n
+z_vals = [1, -1]
+a_vals = [0.0, 0.0]                # steric sizes a_j; zero if no steric
+j0 = Constant(1.0)                 # example for Butler-Volmer
+alpha = Constant(0.5)
+n_electrons = Constant(1.0)
+phi_eq = Constant(0.0)
 
-# Make mesh (square [0, Length_limit] x [0, Length_limit])
-# Use a simple structured rectangle mesh
-nx = ny = 32
-mesh = RectangleMesh(nx, ny, Length_limit, Length_limit, quadrilateral=False)
+# --- mesh and measures
+mesh = UnitSquareMesh(32, 32)
+ds = Measure("ds", domain=mesh)
 
-# Mixed function space: three scalar CG1 fields
-V0 = FunctionSpace(mesh, "CG", 1)
-V = V0 * V0 * V0
+# assume electrode is boundary mark 1: use ds(1) in boundary integral
+electrode_marker = 1
 
-# Spatial coordinate (ufl)
-x = SpatialCoordinate(mesh)
+# --- function spaces: mixed for c_1,...,c_n, phi
+V_scalar = FunctionSpace(mesh, "CG", order)
+mixed_spaces = [V_scalar for _ in range(n)] + [V_scalar]  # last is phi
+W = MixedFunctionSpace(*mixed_spaces)
 
-# Define the analytic fields c1, c2, phi (ufl expressions)
-c1 = 1.0 + 0.5 * sin(pi * x[0] / Length_limit) * sin(pi * x[1] / Length_limit)
-c2 = 1.0 - 0.5 * sin(pi * x[0] / Length_limit) * sin(pi * x[1] / Length_limit)
-phi = sin(pi * x[0] / Length_limit) * sin(pi * x[1] / Length_limit)
+# --- trial / test / function
+U = Function(W)          # current (nonlinear) unknown vector
+U_prev = Function(W)     # previous time step
+v_tests = TestFunctions(W)
+# Break out components
+ci = split(U)[:-1]       # list: c_1,...,c_n (length n)
+phi = split(U)[-1]
+ci_prev = split(U_prev)[:-1]
+phi_prev = split(U_prev)[-1]
 
-# diffusion coefficients from original code
-d1 = 9.311000000000e+00
-d2 = 5.273000000000e+00
+v_list = v_tests[:-1]
+w = v_tests[-1]
 
-# Precompute necessary UFL pieces for the source terms
-dotc1 = inner(grad(c1), grad(phi))
-dotc2 = inner(grad(c2), grad(phi))
-s1 = factor_1 * d1 * (div(grad(c1)) + 1.0 * dotc1 + 1.0 * c1 * div(grad(phi)))
-s2 = factor_1 * d2 * (div(grad(c2)) - 1.0 * dotc2 - 1.0 * c2 * div(grad(phi)))
-p  = div(grad(phi)) - (1.0 * c1 - 1.0 * c2)
+# --- helper: mu_steric and its gradient
+# mu = kT * ln(1 - sum_j a_j * c_j)
+kB = Constant(1.380649e-23)  # if you really want k_B; often k_BT used -- adapt units
+kBT = Constant(R*T)          # using R*T is common here (paper uses k_B T or R T depending)
+sum_a_c = sum( Constant(a_vals[i]) * ci[i] for i in range(n) )
+mu_steric = kBT * ln(1 - sum_a_c)   # if a_vals are zero, this term vanishes
+# grad(mu_steric) computed by UFL via grad(mu_steric)
 
-# Boundary indicator for right (x = Length_limit) and left (x = 0)
-# Firedrake's DirichletBC allows a function that tests coordinates
-eps = 1e-12
-def right_boundary(xcoord):
-    return np.isclose(xcoord[0], Length_limit, atol=1e-12)
+# --- variational residual
+F_res = 0
+for i in range(n):
+    c = ci[i]
+    c_old = ci_prev[i]
+    v = v_list[i]
+    D = Constant(D_vals[i])
+    z = Constant(z_vals[i])
+    # time derivative (Backward Euler)
+    F_res += ( (c - c_old)/dt * v )*dx
 
-def left_boundary(xcoord):
-    return np.isclose(xcoord[0], 0.0, atol=1e-12)
+    # diffusion + drift (steric included)
+    drift_potential = F_over_RT * z * phi + mu_steric
+    Jflux = D*(grad(c) + c * grad(drift_potential))
+    F_res += dot(Jflux, grad(v))*dx
 
-# Create the mixed function and test/trial splits
-u = Function(V, name="u")     # unknown (will hold (H, OH, phi))
-v_H, v_OH, v_phi = TestFunctions(V)
-u_H, u_OH, u_phi = split(u)
+    # Butler-Volmer boundary flux (boundary integral on electrode)
+    # BV current density:
+    eta = phi - phi_eq
+    j = j0*( exp(-alpha*n_electrons*F_over_RT*eta) - exp((1-alpha)*n_electrons*F_over_RT*eta) )
+    # sign: choose + or - per reaction; here we add the contribution (paper uses +/-)
+    F_res -= ( (+1.0/(n_electrons*F)) * j * v )*ds(electrode_marker)
 
-# Initial guess function (u_n in original)
-u_n = Function(V, name="u_n")
-# Interpolate initial guesses into subfunctions
-# For mixed Function, use split assignment through intermediate Functions
-u_n_H = Function(V0)
-u_n_OH = Function(V0)
-u_n_phi = Function(V0)
+# Poisson residual
+eps = Constant(1.0)  # permittivity (set appropriately)
+phi_test = w
+F_res += eps*dot(grad(phi), grad(phi_test))*dx
+F_res -= sum( Constant(z_vals[i])*F * ci[i]*phi_test for i in range(n) )*dx
+# add Neumann bc on phi if necessary: subtract flux * w over Gamma_N
 
-u_n_H.interpolate(Constant(1.0e-4))
-u_n_OH.interpolate(Constant(1.0e-4))
-# the original had linear expression for phi initial: 7.944060176975e-03*x + (-4.672608459440e+01)
-# we map X[0] (x coordinate) appropriately (units consistent with domain)
-x, y = SpatialCoordinate(u_n_phi.function_space().mesh())
-u_n_phi.interpolate(7.944060176975e-03 * x + Constant(-4.672608459440e+01))
+# --- form the Jacobian automatically
+J = derivative(F_res, U)
 
-# Assign into the mixed u_n
-assign(u_n.sub(0), u_n_H)
-assign(u_n.sub(1), u_n_OH)
-assign(u_n.sub(2), u_n_phi)
+# --- initial condition: fill U_prev with initial c's and phi (e.g. uniform)
+assign(U_prev.sub(0), interpolate(Constant(1.0), V_scalar))  # etc.
 
-# Create Dirichlet BCs on the right boundary (x = Length_limit)
-# Values: 1e-4 for H and OH, 0.0 for phi
-bc_H  = DirichletBC(V.sub(0), Constant(1.0e-4), right_boundary)
-bc_OH = DirichletBC(V.sub(1), Constant(1.0e-4), right_boundary)
-bc_phi= DirichletBC(V.sub(2), Constant(0.0),     right_boundary)
-bcs = [bc_H, bc_OH, bc_phi]
-
-# Constants from original
-flux_OH_at_left = Constant(1.0e-5)   # not used explicitly in this conversion (kept for completeness)
-dt = Constant(1.0e-10)
-
-# Define fluxes
-flux_H  = d1 * (u_H * (+1.0) * grad(u_phi) + grad(u_H))
-flux_OH = d2 * (u_OH * (-1.0) * grad(u_phi) + grad(u_OH))
-
-# Variational forms (F = 0)
-F_H   = factor_1 * dot(flux_H, grad(v_H)) * dx - s1 * v_H * dx
-F_OH  = factor_1 * dot(flux_OH, grad(v_OH)) * dx - s2 * v_OH * dx
-F_phi = dot(grad(u_phi), grad(v_phi)) * dx - ((+1.0) * u_H + (-1.0) * u_OH) * v_phi * dx - p * v_phi * dx
-
-F = F_H + F_OH + F_phi
-
-# Create nonlinear problem & solver (Firedrake style)
-problem = NonlinearVariationalProblem(F, u, bcs=bcs)
-# Solver parameters: use PETSc SNES with Newton by default
-solver_parameters = {
-    "snes_type": "newtonls",
-    "snes_rtol": 1e-6,
-    # linear solve options will be passed to KSP; choose defaults or override via PETSc options
-    "ksp_type": "cg",
-    "pc_type": "lu",  # you can change to "gamg" or others if you have parallel capabilities
+# --- solve monolithically using NonlinearVariationalSolver
+problem = NonlinearVariationalProblem(F_res, U, bcs=None, J=J)
+solver_params = {
+    'snes_type': 'newtonls',  # Newton line-search
+    'snes_max_it': 50,
+    'snes_rtol': 1e-9,
+    'ksp_type': 'preonly',
+    # use field split (block) preconditioner: separate species block(s) and potential block
+    'pc_type': 'fieldsplit',
+    'pc_fieldsplit_type': 'schur',
+    'pc_fieldsplit_schur_fact_type': 'FULL',
+    # setup fieldsplit names / splits afterwards in options context if needed
 }
-solver = NonlinearVariationalSolver(problem, solver_parameters=solver_parameters)
 
-# Optionally expose PETSc options to be set from the command-line
-# e.g., mpirun -n 4 python firedrake_equiv.py -snes_type newtonls -ksp_type gmres ...
-# Solve
-print("Before solve")
+solver = NonlinearVariationalSolver(problem, solver_parameters=solver_params)
 solver.solve()
-print("After solve")
-
-# Compute L2 differences between solution and analytic fields c1, c2, phi
-# Extract components of the solution
-uh, uoh, up = u.split()
-
-H_L2  = sqrt(assemble(((uh - c1) ** 2) * dx))
-OH_L2 = sqrt(assemble(((uoh - c2) ** 2) * dx))
-phi_L2= sqrt(assemble(((up - phi) ** 2) * dx))
-
-print(f"L2 errors: H={H_L2:.3e}  OH={OH_L2:.3e}  phi={phi_L2:.3e}")
-
-# Save solution to VTK for inspection (Paraview)
-File("firedrake_solution.pvd").write(u)

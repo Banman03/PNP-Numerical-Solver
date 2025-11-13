@@ -90,8 +90,7 @@
 
 from firedrake.adjoint import *
 from firedrake import *
-from pyadjoint import minimize, AdjFloat
-from pyadjoint.optimization import optimization_problem, optimization_solver
+from pyadjoint import minimize
 
 continue_annotation()
 n = 30
@@ -112,11 +111,22 @@ u_old.assign(ic)
 v = TestFunction(V)
 bc = DirichletBC(V, 0.0, "on_boundary")
 
+# Solver parameters for better convergence
+solver_params = {
+    'snes_type': 'newtonls',
+    'snes_max_it': 50,
+    'snes_linesearch_type': 'bt',
+    'ksp_type': 'preonly',
+    'pc_type': 'lu',
+    'snes_atol': 1e-8,
+    'snes_rtol': 1e-8
+}
+
 for _ in range(steps):
     F_true = ((u_true - u_old)/timestep*v
               + u_true*u_true.dx(0)*v + nu_true*u_true.dx(0)*v.dx(0))*dx
     problem_true = NonlinearVariationalProblem(F_true, u_true, bcs=bc)
-    solver_true = NonlinearVariationalSolver(problem_true)
+    solver_true = NonlinearVariationalSolver(problem_true, solver_parameters=solver_params)
     solver_true.solve()
     u_old.assign(u_true)
 
@@ -138,15 +148,17 @@ for _ in range(steps):
     F = ((u_new - u_old)/timestep*v
          + u_new*u_new.dx(0)*v + nu_guess*u_new.dx(0)*v.dx(0))*dx
     problem = NonlinearVariationalProblem(F, u_new, bcs=bc)
-    solver = NonlinearVariationalSolver(problem)
+    solver = NonlinearVariationalSolver(problem, solver_parameters=solver_params)
     solver.solve()
     u_old.assign(u_new)
     J += assemble(0.5*(u_new - u_data)**2*dx)
 
-pause_annotation()
-
-# Optimize
+# Optimize with bounds to prevent unrealistic parameter values
 Jhat = ReducedFunctional(J, nu_control)
-nu_opt = minimize(Jhat)
+nu_opt = minimize(Jhat, 
+                  method='L-BFGS-B',
+                  bounds=(1e-5, 0.01),
+                  options={'maxiter': 50, 'ftol': 1e-9, "disp": 1})
+
 print(f"True nu = {float(nu_true)}")
-print(f"Optimized nu = {float(nu_opt)}")
+print(f"Optimized nu = {f'{float(nu_opt):.8f}'}")
