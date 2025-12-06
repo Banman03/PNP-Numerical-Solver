@@ -1,5 +1,26 @@
 <?xml version="1.0" ?>
 <VTKFile type="Collection" version="0.1" byte_order="LittleEndian">
 <Collection>
+<DataSet timestep="0.001" file="phi/phi_0.vtu" />
+<DataSet timestep="0.05100000000000004" file="phi/phi_1.vtu" />
+<DataSet timestep="0.10100000000000008" file="phi/phi_2.vtu" />
+<DataSet timestep="0.1510000000000001" file="phi/phi_3.vtu" />
+<DataSet timestep="0.20100000000000015" file="phi/phi_4.vtu" />
+<DataSet timestep="0.25100000000000017" file="phi/phi_5.vtu" />
+<DataSet timestep="0.3010000000000002" file="phi/phi_6.vtu" />
+<DataSet timestep="0.35100000000000026" file="phi/phi_7.vtu" />
+<DataSet timestep="0.4010000000000003" file="phi/phi_8.vtu" />
+<DataSet timestep="0.45100000000000035" file="phi/phi_9.vtu" />
+<DataSet timestep="0.5010000000000003" file="phi/phi_10.vtu" />
+<DataSet timestep="0.5510000000000004" file="phi/phi_11.vtu" />
+<DataSet timestep="0.6010000000000004" file="phi/phi_12.vtu" />
+<DataSet timestep="0.6510000000000005" file="phi/phi_13.vtu" />
+<DataSet timestep="0.7010000000000005" file="phi/phi_14.vtu" />
+<DataSet timestep="0.7510000000000006" file="phi/phi_15.vtu" />
+<DataSet timestep="0.8010000000000006" file="phi/phi_16.vtu" />
+<DataSet timestep="0.8510000000000006" file="phi/phi_17.vtu" />
+<DataSet timestep="0.9010000000000007" file="phi/phi_18.vtu" />
+<DataSet timestep="0.9510000000000007" file="phi/phi_19.vtu" />
+<DataSet timestep="1.0000000000000007" file="phi/phi_20.vtu" />
 </Collection>
 </VTKFile>

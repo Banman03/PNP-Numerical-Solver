@@ -1,0 +1,26 @@
+<?xml version="1.0" ?>
+<VTKFile type="Collection" version="0.1" byte_order="LittleEndian">
+<Collection>
+<DataSet timestep="0.001" file="c1/c1_0.vtu" />
+<DataSet timestep="0.05100000000000004" file="c1/c1_1.vtu" />
+<DataSet timestep="0.10100000000000008" file="c1/c1_2.vtu" />
+<DataSet timestep="0.1510000000000001" file="c1/c1_3.vtu" />
+<DataSet timestep="0.20100000000000015" file="c1/c1_4.vtu" />
+<DataSet timestep="0.25100000000000017" file="c1/c1_5.vtu" />
+<DataSet timestep="0.3010000000000002" file="c1/c1_6.vtu" />
+<DataSet timestep="0.35100000000000026" file="c1/c1_7.vtu" />
+<DataSet timestep="0.4010000000000003" file="c1/c1_8.vtu" />
+<DataSet timestep="0.45100000000000035" file="c1/c1_9.vtu" />
+<DataSet timestep="0.5010000000000003" file="c1/c1_10.vtu" />
+<DataSet timestep="0.5510000000000004" file="c1/c1_11.vtu" />
+<DataSet timestep="0.6010000000000004" file="c1/c1_12.vtu" />
+<DataSet timestep="0.6510000000000005" file="c1/c1_13.vtu" />
+<DataSet timestep="0.7010000000000005" file="c1/c1_14.vtu" />
+<DataSet timestep="0.7510000000000006" file="c1/c1_15.vtu" />
+<DataSet timestep="0.8010000000000006" file="c1/c1_16.vtu" />
+<DataSet timestep="0.8510000000000006" file="c1/c1_17.vtu" />
+<DataSet timestep="0.9010000000000007" file="c1/c1_18.vtu" />
+<DataSet timestep="0.9510000000000007" file="c1/c1_19.vtu" />
+<DataSet timestep="1.0000000000000007" file="c1/c1_20.vtu" />
+</Collection>
+</VTKFile>
