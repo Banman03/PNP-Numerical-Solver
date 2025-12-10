@@ -252,11 +252,11 @@ plt.colorbar(axes[1].collections[0], ax=axes[1], label='c₁')
 
 # Plot electric potential
 tripcolor(phi_func, axes=axes[2], cmap='coolwarm')
-axes[2].set_title(f'Electric Potential φ at t={t:.3f}')
+axes[2].set_title(f'Electric Potential phi at t={t:.3f}')
 axes[2].set_xlabel('x')
 axes[2].set_ylabel('y')
 axes[2].set_aspect('equal')
-plt.colorbar(axes[2].collections[0], ax=axes[2], label='φ')
+plt.colorbar(axes[2].collections[0], ax=axes[2], label='phi')
 
 bv_status = "with BV" if use_butler_volmer else "no BV"
 fig.suptitle(f'PNP Solution ({bv_status}): {num_steps} time steps, dt={dt}', fontsize=14, y=1.02)
@@ -328,7 +328,7 @@ def create_animation(data_list, title, cmap, filename):
 # Create animations for each field
 create_animation(snapshots['c0'], 'Concentration c₀', 'viridis', f'c0_animation{bv_suffix}')
 create_animation(snapshots['c1'], 'Concentration c₁', 'plasma', f'c1_animation{bv_suffix}')
-create_animation(snapshots['phi'], 'Electric Potential φ', 'coolwarm', f'phi_animation{bv_suffix}')
+create_animation(snapshots['phi'], 'Electric Potential phi', 'coolwarm', f'phi_animation{bv_suffix}')
 
 print("Animation generation complete!")
     
