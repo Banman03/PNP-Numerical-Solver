@@ -1,4 +1,20 @@
 from firedrake import *
+import argparse
+
+# Parse command-line arguments
+parser = argparse.ArgumentParser(
+    description='PNP solver with optional Butler-Volmer boundary conditions',
+    epilog='Examples:\n  python pnp_solver.py 0  # Run without BV (default case)\n  python pnp_solver.py 1  # Run with Butler-Volmer BCs',
+    formatter_class=argparse.RawDescriptionHelpFormatter
+)
+parser.add_argument('bv_enabled', type=int, choices=[0, 1],
+                    help='Enable Butler-Volmer BCs: 1=on, 0=off')
+args = parser.parse_args()
+
+use_butler_volmer = bool(args.bv_enabled)
+print(f"\n{'='*60}")
+print(f"Butler-Volmer boundary conditions: {'ENABLED' if use_butler_volmer else 'DISABLED'}")
+print(f"{'='*60}\n")
 
 n_species = n = 2
 order = 1
@@ -15,10 +31,14 @@ F_over_RT = F/(R*T)
 D_vals = [1.0, 1.0]                # list length n
 z_vals = [1, -1]
 a_vals = [0.0, 0.0]                # steric sizes a_j; zero if no steric
-j0 = Constant(1.0)                 # example for Butler-Volmer
-alpha = Constant(0.5)
-n_electrons = Constant(1.0)
-phi_eq = Constant(0.0)
+
+# Butler-Volmer parameters (only used if use_butler_volmer=True)
+if use_butler_volmer:
+    j0 = Constant(0.01)             # exchange current density (reduced for stability)
+    alpha = Constant(0.5)           # charge transfer coefficient
+    n_electrons = Constant(1.0)     # electrons transferred
+    phi_eq = Constant(0.0)          # equilibrium potential
+    phi_applied = Constant(0.05)    # applied electrode potential
 
 # --- mesh and measures
 mesh = UnitSquareMesh(32, 32)
@@ -73,12 +93,22 @@ for i in range(n):
     Jflux = D*(grad(c) + c * grad(drift_potential))
     F_res += dot(Jflux, grad(v))*dx
 
-    # Butler-Volmer boundary flux (boundary integral on electrode)
-    # BV current density:
-    eta = phi - phi_eq
-    j = j0*( exp(-alpha*n_electrons*F_over_RT*eta) - exp((1-alpha)*n_electrons*F_over_RT*eta) )
-    # sign: choose + or - per reaction; here we add the contribution (paper uses +/-)
-    # F_res -= ( (+1.0/(n_electrons*F)) * j * v )*ds(electrode_marker)
+# Butler-Volmer boundary flux (only if enabled)
+if use_butler_volmer:
+    # For redox reaction: O (species 0, z=+1) + e⁻ ⇌ R (species 1, z=-1)
+    # BV current density at electrode:
+    eta = phi - phi_applied
+    j_BV = j0*( exp(-alpha*n_electrons*F_over_RT*eta) - exp((1-alpha)*n_electrons*F_over_RT*eta) )
+
+    # Flux boundary condition for each species
+    for i in range(n):
+        v = v_list[i]
+        if i == 0:
+            # Oxidized species: consumed at electrode (negative flux)
+            F_res += ( (1.0/(n_electrons*F)) * j_BV * v )*ds(electrode_marker)
+        else:
+            # Reduced species: produced at electrode (positive flux)
+            F_res -= ( (1.0/(n_electrons*F)) * j_BV * v )*ds(electrode_marker)
 
 # Poisson residual
 eps = Constant(1.0)  # permittivity (set appropriately)
@@ -88,34 +118,66 @@ F_res -= sum( Constant(z_vals[i])*F * ci[i]*phi_test for i in range(n) )*dx
 # add Neumann bc on phi if necessary: subtract flux * w over Gamma_N
 
 
-phi0 = 0.0
 c0 = 1.0
 
-bc_phi = DirichletBC(W.sub(n), Constant(phi0), 1)
-bc_ci  = [DirichletBC(W.sub(i), Constant(c0), 3) for i in range(n)]
-
-bcs = bc_ci + [bc_phi]
+# Boundary conditions
+if use_butler_volmer:
+    # With BV: electrode at phi_applied, ground at opposite side
+    bc_phi_electrode = DirichletBC(W.sub(n), phi_applied, 1)
+    bc_phi_ground = DirichletBC(W.sub(n), Constant(0.0), 3)
+    bc_ci = [DirichletBC(W.sub(i), Constant(c0), 3) for i in range(n)]
+    bcs = bc_ci + [bc_phi_electrode, bc_phi_ground]
+else:
+    # Without BV: original boundary conditions
+    phi0 = 0.0
+    bc_phi = DirichletBC(W.sub(n), Constant(phi0), 1)
+    bc_ci = [DirichletBC(W.sub(i), Constant(c0), 3) for i in range(n)]
+    bcs = bc_ci + [bc_phi]
 
 # --- form the Jacobian automatically
 J = derivative(F_res, U)
 
-# --- initial condition: fill U_prev with initial c's and phi (e.g. uniform)
+# --- initial condition: fill U_prev with initial c's and phi
 for i in range(n):
     U_prev.sub(i).assign(Constant(c0))
-U_prev.sub(n).assign(Constant(phi0))
+
+if use_butler_volmer:
+    # Initialize phi with linear profile for better convergence
+    x, y = SpatialCoordinate(mesh)
+    phi_init = phi_applied * (1 - y)  # linear: phi_applied at y=0, 0 at y=1
+    U_prev.sub(n).interpolate(phi_init)
+    U.assign(U_prev)  # Initialize U as well
+else:
+    # Original: uniform phi=0
+    U_prev.sub(n).assign(Constant(0.0))
 
 # --- solve monolithically using NonlinearVariationalSolver
 problem = NonlinearVariationalProblem(F_res, U, bcs=bcs, J=J)
-solver_params = {
-    'snes_type': 'newtonls',
-    'snes_max_it': 50,
-    'snes_rtol': 1e-9,
-    'ksp_type': 'preonly',
-    # use field split (block) preconditioner: separate species block(s) and potential block
-    'pc_type': 'fieldsplit',
-    'pc_fieldsplit_type': 'additive',
-    # setup fieldsplit names / splits afterwards in options context if needed
-}
+
+if use_butler_volmer:
+    # More robust solver parameters for BV nonlinearity
+    solver_params = {
+        'snes_type': 'newtonls',
+        'snes_max_it': 100,
+        'snes_rtol': 1e-6,
+        'snes_atol': 1e-6,
+        'snes_linesearch_type': 'bt',  # backtracking line search
+        'snes_monitor': None,
+        'ksp_type': 'gmres',
+        'ksp_max_it': 200,
+        'ksp_rtol': 1e-6,
+        'pc_type': 'ilu',
+    }
+else:
+    # Original solver parameters
+    solver_params = {
+        'snes_type': 'newtonls',
+        'snes_max_it': 50,
+        'snes_rtol': 1e-9,
+        'ksp_type': 'preonly',
+        'pc_type': 'fieldsplit',
+        'pc_fieldsplit_type': 'additive',
+    }
 
 solver = NonlinearVariationalSolver(problem, solver_parameters=solver_params)
 
@@ -128,8 +190,9 @@ print(f"Time step dt = {dt}")
 snapshots = {'t': [], 'c0': [], 'c1': [], 'phi': []}
 
 # Open VTK files for time series output
-phi_file = VTKFile("phi.pvd")
-c_files = [VTKFile(f"c{i}.pvd") for i in range(n)]
+bv_suffix = "_bv" if use_butler_volmer else "_no_bv"
+phi_file = VTKFile(f"phi{bv_suffix}.pvd")
+c_files = [VTKFile(f"c{i}{bv_suffix}.pvd") for i in range(n)]
 
 for step in range(num_steps):
     # Solve for current time step
@@ -195,10 +258,12 @@ axes[2].set_ylabel('y')
 axes[2].set_aspect('equal')
 plt.colorbar(axes[2].collections[0], ax=axes[2], label='φ')
 
-fig.suptitle(f'PNP Solution: {num_steps} time steps, dt={dt}', fontsize=14, y=1.02)
+bv_status = "with BV" if use_butler_volmer else "no BV"
+fig.suptitle(f'PNP Solution ({bv_status}): {num_steps} time steps, dt={dt}', fontsize=14, y=1.02)
 plt.tight_layout()
-plt.savefig('pnp_solution.png', dpi=300, bbox_inches='tight')
-print("Saved final state visualization to pnp_solution.png")
+output_png = f'pnp_solution{bv_suffix}.png'
+plt.savefig(output_png, dpi=300, bbox_inches='tight')
+print(f"Saved final state visualization to {output_png}")
 plt.show()
 
 # --- Create animations
@@ -261,9 +326,9 @@ def create_animation(data_list, title, cmap, filename):
     plt.close(fig_anim)
 
 # Create animations for each field
-create_animation(snapshots['c0'], 'Concentration c₀', 'viridis', 'c0_animation')
-create_animation(snapshots['c1'], 'Concentration c₁', 'plasma', 'c1_animation')
-create_animation(snapshots['phi'], 'Electric Potential φ', 'coolwarm', 'phi_animation')
+create_animation(snapshots['c0'], 'Concentration c₀', 'viridis', f'c0_animation{bv_suffix}')
+create_animation(snapshots['c1'], 'Concentration c₁', 'plasma', f'c1_animation{bv_suffix}')
+create_animation(snapshots['phi'], 'Electric Potential φ', 'coolwarm', f'phi_animation{bv_suffix}')
 
 print("Animation generation complete!")
     
