@@ -17,7 +17,7 @@ import numpy as np
 # Define symbolic variables
 x, y, t = symbols('x y t', real=True)
 
-# Physical parameters (matching pnp_solver.py)
+# Physical parameters (matches pnp_solver.py)
 F = 96485.3329
 R = 8.314462618
 T = 298.15
