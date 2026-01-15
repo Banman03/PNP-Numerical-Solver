@@ -1,7 +1,6 @@
 from firedrake import *
 import argparse
 
-# Parse command-line arguments
 parser = argparse.ArgumentParser(
     description='PNP solver with optional Butler-Volmer boundary conditions',
     epilog='Examples:\n  python pnp_solver.py 0  # Run without BV (default case)\n  python pnp_solver.py 1  # Run with Butler-Volmer BCs',
@@ -16,7 +15,6 @@ BC_MODE_BV = 1
 BC_MODE_ROBIN = 2
 mode = args.bc_mode
 
-# Set flags for easier logic later
 use_butler_volmer = (mode == BC_MODE_BV)
 use_robin = (mode == BC_MODE_ROBIN)
 print(f"\n{'='*60}")
@@ -26,47 +24,43 @@ print(f"{'='*60}\n")
 n_species = n = 2
 order = 1
 dt = 1e-3
-t_end = 1.0  # end time
+t_end = 1.0
 num_steps = int(t_end / dt)
-output_interval = 50  # save output every N steps
+output_interval = 50
 
 F = 96485.3329
 R = 8.314462618
 T = 298.15
 F_over_RT = F/(R*T)
 
-D_vals = [1.0, 1.0]                # list length n
+D_vals = [1.0, 1.0]
 z_vals = [1, -1]
-a_vals = [0.0, 0.0]                # steric sizes a_j; zero if no steric
+a_vals = [0.0, 0.0]
 
-# Butler-Volmer parameters (only used if use_butler_volmer=True)
+phi_applied = Constant(0.05)
+
+# Parameters for unique BCs
 if use_butler_volmer:
-    j0 = Constant(0.01)             # exchange current density (reduced for stability)
-    alpha = Constant(0.5)           # charge transfer coefficient
-    n_electrons = Constant(1.0)     # electrons transferred
-    phi_eq = Constant(0.0)          # equilibrium potential
-    phi_applied = Constant(0.05)    # applied electrode potential
-    
+    j0 = Constant(0.01)
+    alpha = Constant(0.5)
+    n_electrons = Constant(1.0)
+    phi_eq = Constant(0.0)
 elif use_robin:
     # Robin Parameters: Flux J = kappa * (c - c_inf)
     # kappa: Mass transfer coefficient (m/s)
     # c_inf: Ambient/Bulk concentration
-    kappa = Constant(1.5)           
+    kappa = Constant(1.0)
     c_inf = Constant(1.0)
 
-# --- mesh and measures
 mesh = UnitSquareMesh(32, 32)
 ds = Measure("ds", domain=mesh)
 
-# assume electrode is boundary mark 1: use ds(1) in boundary integral
 electrode_marker = 1
 
-# --- function spaces: mixed for c_1,...,c_n, phi
 V_scalar = FunctionSpace(mesh, "CG", order)
 mixed_spaces = [V_scalar for _ in range(n)] + [V_scalar]  # last is phi
 W = MixedFunctionSpace(mixed_spaces)
 
-# --- trial / test / function
 U = Function(W)
 U_prev = Function(W)
 
@@ -74,7 +68,8 @@ splitCur = split(U)
 splitPrev = split(U_prev)
 
 v_tests = TestFunctions(W)
-# Break out components
+
+# Break out component species
 ci = split(U)[:-1]
 phi = split(U)[-1]
 ci_prev = split(U_prev)[:-1]
@@ -83,15 +78,14 @@ phi_prev = split(U_prev)[-1]
 v_list = v_tests[:-1]
 w = v_tests[-1]
 
-# --- helper: mu_steric and its gradient
+# We are not using the mu term for now (solver was failing to converge)
 # mu = kT * ln(1 - sum_j a_j * c_j)
-kB = Constant(1.380649e-23)  # if you really want k_B; often k_BT used -- adapt units
-kBT = Constant(R*T)          # using R*T is common here (paper uses k_B T or R T depending)
+kB = Constant(1.380649e-23)
+kBT = Constant(R*T)
 sum_a_c = sum( Constant(a_vals[i]) * ci[i] for i in range(n) )
 # mu_steric = kBT * ln(1 - sum_a_c)   # if a_vals are zero, this term vanishes
 # grad(mu_steric) computed by UFL via grad(mu_steric)
 
-# --- variational residual
 F_res = 0
 for i in range(n):
     c = ci[i]
@@ -99,22 +93,19 @@ for i in range(n):
     v = v_list[i]
     D = Constant(D_vals[i])
     z = Constant(z_vals[i])
-    # time derivative (Backward Euler)
+    # Backward Euler time derivative
     F_res += ( (c - c_old)/dt * v )*dx
 
-    # diffusion + drift (steric included)
+    # diffusion + drift (no steric)
     drift_potential = F_over_RT * z * phi # + mu_steric
     Jflux = D*(grad(c) + c * grad(drift_potential))
     F_res += dot(Jflux, grad(v))*dx
 
-# Butler-Volmer boundary flux (only if enabled)
+# Unique BC boundary flux
 if use_butler_volmer:
-    # For redox reaction: O (species 0, z=+1) + e⁻ ⇌ R (species 1, z=-1)
-    # BV current density at electrode:
     eta = phi - phi_applied
     j_BV = j0*( exp(-alpha*n_electrons*F_over_RT*eta) - exp((1-alpha)*n_electrons*F_over_RT*eta) )
 
-    # Flux boundary condition for each species
     for i in range(n):
         v = v_list[i]
         if i == 0:
@@ -133,12 +124,10 @@ elif use_robin:
         F_res += kappa * (c - c_inf) * v * ds(electrode_marker)
 
 # Poisson residual
-eps = Constant(1.0)  # permittivity (set appropriately)
+eps = Constant(1.0)
 phi_test = w
 F_res += eps*dot(grad(phi), grad(phi_test))*dx
 F_res -= sum( Constant(z_vals[i])*F * ci[i]*phi_test for i in range(n) )*dx
-# add Neumann bc on phi if necessary: subtract flux * w over Gamma_N
-
 
 c0 = 1.0
 
