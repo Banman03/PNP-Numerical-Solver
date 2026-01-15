@@ -1,5 +1,7 @@
 from firedrake import *
 import argparse
+import matplotlib.pyplot as plt
+from firedrake.pyplot import tripcolor, tricontour
 
 parser = argparse.ArgumentParser(
     description='PNP solver with optional Butler-Volmer boundary conditions',
@@ -33,7 +35,7 @@ R = 8.314462618
 T = 298.15
 F_over_RT = F/(R*T)
 
-D_vals = [1.0, 1.0]
+D_vals = [2.0, 1.0]
 z_vals = [1, -1]
 a_vals = [0.0, 0.0]
 
@@ -165,30 +167,30 @@ else:
 # --- solve monolithically using NonlinearVariationalSolver
 problem = NonlinearVariationalProblem(F_res, U, bcs=bcs, J=J)
 
-if use_butler_volmer:
+# if use_butler_volmer or use_robin:
     # More robust solver parameters for BV nonlinearity
-    solver_params = {
-        'snes_type': 'newtonls',
-        'snes_max_it': 100,
-        'snes_rtol': 1e-6,
-        'snes_atol': 1e-6,
-        'snes_linesearch_type': 'bt',  # backtracking line search
-        'snes_monitor': None,
-        'ksp_type': 'gmres',
-        'ksp_max_it': 200,
-        'ksp_rtol': 1e-6,
-        'pc_type': 'ilu',
-    }
-else:
-    # Original solver parameters
-    solver_params = {
-        'snes_type': 'newtonls',
-        'snes_max_it': 50,
-        'snes_rtol': 1e-9,
-        'ksp_type': 'preonly',
-        'pc_type': 'fieldsplit',
-        'pc_fieldsplit_type': 'additive',
-    }
+solver_params = {
+    'snes_type': 'newtonls',
+    'snes_max_it': 100,
+    'snes_rtol': 1e-6,
+    'snes_atol': 1e-6,
+    'snes_linesearch_type': 'bt',  # backtracking line search
+    # 'snes_monitor': None,
+    'ksp_type': 'gmres',
+    'ksp_max_it': 200,
+    'ksp_rtol': 1e-6,
+    'pc_type': 'ilu',
+}
+# else:
+#     # Original solver parameters
+#     solver_params = {
+#         'snes_type': 'newtonls',
+#         'snes_max_it': 50,
+#         'snes_rtol': 1e-9,
+#         'ksp_type': 'preonly',
+#         'pc_type': 'fieldsplit',
+#         'pc_fieldsplit_type': 'additive',
+    # }
 
 solver = NonlinearVariationalSolver(problem, solver_parameters=solver_params)
 
@@ -210,6 +212,53 @@ else:
 
 phi_file = VTKFile(f"phi{suffix}.pvd")
 c_files = [VTKFile(f"c{i}{suffix}.pvd") for i in range(n)]
+
+print(f"\n{'*'*20} INITIAL CONDITIONS VERIFICATION {'*'*20}")
+
+for i in range(n):
+    c_data = U_prev.sub(i).dat.data_ro
+    print(f"Species c{i}: Min={c_data.min():.4f}, Max={c_data.max():.4f}, Mean={c_data.mean():.4f}")
+
+phi_data = U_prev.sub(n).dat.data_ro
+print(f"Potential phi: Min={phi_data.min():.4f}, Max={phi_data.max():.4f}, Mean={phi_data.mean():.4f}")
+print(f"{'*'*60}\n")
+
+
+# Create figure with subplots for each field
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+# Plot concentration of species 0
+tripcolor(U_prev.sub(0), axes=axes[0], cmap='viridis')
+axes[0].set_title(f'Concentration c₀ (z={z_vals[0]:+d}) at t={t:.3f}')
+axes[0].set_xlabel('x')
+axes[0].set_ylabel('y')
+axes[0].set_aspect('equal')
+plt.colorbar(axes[0].collections[0], ax=axes[0], label='c₀')
+
+# Plot concentration of species 1
+tripcolor(U_prev.sub(1), axes=axes[1], cmap='plasma')
+axes[1].set_title(f'Concentration c₁ (z={z_vals[1]:+d}) at t={t:.3f}')
+axes[1].set_xlabel('x')
+axes[1].set_ylabel('y')
+axes[1].set_aspect('equal')
+plt.colorbar(axes[1].collections[0], ax=axes[1], label='c₁')
+
+# Plot electric potential
+tripcolor(U_prev.sub(2), axes=axes[2], cmap='coolwarm')
+axes[2].set_title(f'Electric Potential phi at t={t:.3f}')
+axes[2].set_xlabel('x')
+axes[2].set_ylabel('y')
+axes[2].set_aspect('equal')
+plt.colorbar(axes[2].collections[0], ax=axes[2], label='phi')
+
+bv_status = "with BV" if use_butler_volmer else "no BV"
+fig.suptitle(f'PNP Solution ({bv_status}): {num_steps} time steps, dt={dt}', fontsize=14, y=1.02)
+plt.tight_layout()
+output_png = f'pnp_solution_init.png'
+plt.savefig(output_png, dpi=300, bbox_inches='tight')
+print(f"Saved final state visualization to {output_png}")
+plt.show()
+
 
 for step in range(num_steps):
     # Solve for current time step
@@ -244,10 +293,6 @@ c0_func = U.sub(0)
 c1_func = U.sub(1)
 phi_func = U.sub(2)
 
-# --- Visualization with matplotlib
-import matplotlib.pyplot as plt
-from firedrake.pyplot import tripcolor, tricontour
-
 # Create figure with subplots for each field
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
@@ -278,7 +323,7 @@ plt.colorbar(axes[2].collections[0], ax=axes[2], label='phi')
 bv_status = "with BV" if use_butler_volmer else "no BV"
 fig.suptitle(f'PNP Solution ({bv_status}): {num_steps} time steps, dt={dt}', fontsize=14, y=1.02)
 plt.tight_layout()
-output_png = f'pnp_solution{bv_suffix}.png'
+output_png = f'pnp_solution{mode}.png'
 plt.savefig(output_png, dpi=300, bbox_inches='tight')
 print(f"Saved final state visualization to {output_png}")
 plt.show()
@@ -343,9 +388,9 @@ def create_animation(data_list, title, cmap, filename):
     plt.close(fig_anim)
 
 # Create animations for each field
-create_animation(snapshots['c0'], 'Concentration c₀', 'viridis', f'c0_animation{bv_suffix}')
-create_animation(snapshots['c1'], 'Concentration c₁', 'plasma', f'c1_animation{bv_suffix}')
-create_animation(snapshots['phi'], 'Electric Potential phi', 'coolwarm', f'phi_animation{bv_suffix}')
+create_animation(snapshots['c0'], 'Concentration c₀', 'viridis', f'c0_animation{mode}')
+create_animation(snapshots['c1'], 'Concentration c₁', 'plasma', f'c1_animation{mode}')
+create_animation(snapshots['phi'], 'Electric Potential phi', 'coolwarm', f'phi_animation{mode}')
 
 print("Animation generation complete!")
     

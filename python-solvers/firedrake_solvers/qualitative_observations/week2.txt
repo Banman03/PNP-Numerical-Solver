@@ -1,0 +1,14 @@
+I have implemented the robin boundary conditions.
+
+When I solve the system with Dirichlet BCs, the system appears to undergo electroneutral diffusion, meaning that phi does not change in time or space from the initial conditions.
+I believe this is because the D values (which govern how quickly species 1 and 2 diffuse throughout the domain) were initially the same, so any change in charge that would result 
+    from a change in the species concentration is offset by the fact that the species are diffusing at the same rate.
+
+I changed the D values for each species. This led to the solver not converging with Dirichlet BCs. However, the solver did converge with robin BCs with the different D values.
+
+The solver is not converging at all with the Butler Volmer BCs.
+
+Before I approach this, I want to confirm that the solution with robin BCs is converging correctly to the manufactured solution. So, I will reperform the method of manufactured 
+    solutions and perform a convergence study (similar to what I did with Dirichlet BCs).
+
+Ask Manu how to find the source term when I have both a more-complex BC, as well as need to plug it into the PNP equations. 
