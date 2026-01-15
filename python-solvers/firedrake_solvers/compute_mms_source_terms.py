@@ -47,8 +47,6 @@ print("    (For spatial convergence: use trig/exponential functions)")
 # Using smooth functions that can have Dirichlet BCs applied
 c_manufactured = []
 for i in range(n_species):
-    # Smooth function ~1.0, with small perturbation
-    # Example: c_i(x,y,t) = 1.0 + 0.1 * sin(pi*x) * sin(pi*y) * exp(-t)
     c_i = 1.0 + 0.1 * sin(pi * x) * sin(pi * y) * exp(-t)
     c_manufactured.append(c_i)
     print(f"  c_{i}(x,y,t) = {c_i}")

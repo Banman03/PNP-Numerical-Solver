@@ -7,11 +7,18 @@ parser = argparse.ArgumentParser(
     epilog='Examples:\n  python pnp_solver.py 0  # Run without BV (default case)\n  python pnp_solver.py 1  # Run with Butler-Volmer BCs',
     formatter_class=argparse.RawDescriptionHelpFormatter
 )
-parser.add_argument('bv_enabled', type=int, choices=[0, 1],
-                    help='Enable Butler-Volmer BCs: 1=on, 0=off')
+parser.add_argument('bc_mode', type=int, choices=[0, 1, 2],
+                    help='Type of boundary conditions: 2=robin, 1=butler-volmer, 0=dirichlet')
 args = parser.parse_args()
 
-use_butler_volmer = bool(args.bv_enabled)
+BC_MODE_DEFAULT = 0
+BC_MODE_BV = 1
+BC_MODE_ROBIN = 2
+mode = args.bc_mode
+
+# Set flags for easier logic later
+use_butler_volmer = (mode == BC_MODE_BV)
+use_robin = (mode == BC_MODE_ROBIN)
 print(f"\n{'='*60}")
 print(f"Butler-Volmer boundary conditions: {'ENABLED' if use_butler_volmer else 'DISABLED'}")
 print(f"{'='*60}\n")
@@ -39,6 +46,13 @@ if use_butler_volmer:
     n_electrons = Constant(1.0)     # electrons transferred
     phi_eq = Constant(0.0)          # equilibrium potential
     phi_applied = Constant(0.05)    # applied electrode potential
+    
+elif use_robin:
+    # Robin Parameters: Flux J = kappa * (c - c_inf)
+    # kappa: Mass transfer coefficient (m/s)
+    # c_inf: Ambient/Bulk concentration
+    kappa = Constant(1.5)           
+    c_inf = Constant(1.0)
 
 # --- mesh and measures
 mesh = UnitSquareMesh(32, 32)
@@ -109,6 +123,14 @@ if use_butler_volmer:
         else:
             # Reduced species: produced at electrode (positive flux)
             F_res -= ( (1.0/(n_electrons*F)) * j_BV * v )*ds(electrode_marker)
+            
+elif use_robin:
+    # Robin Flux: J.n = kappa * (c - c_inf)
+    # Weak form boundary term: + (J.n) * v * ds
+    for i in range(n):
+        v = v_list[i]
+        c = ci[i]
+        F_res += kappa * (c - c_inf) * v * ds(electrode_marker)
 
 # Poisson residual
 eps = Constant(1.0)  # permittivity (set appropriately)
@@ -121,14 +143,14 @@ F_res -= sum( Constant(z_vals[i])*F * ci[i]*phi_test for i in range(n) )*dx
 c0 = 1.0
 
 # Boundary conditions
-if use_butler_volmer:
+if use_butler_volmer or use_robin:
     # With BV: electrode at phi_applied, ground at opposite side
     bc_phi_electrode = DirichletBC(W.sub(n), phi_applied, 1)
     bc_phi_ground = DirichletBC(W.sub(n), Constant(0.0), 3)
     bc_ci = [DirichletBC(W.sub(i), Constant(c0), 3) for i in range(n)]
     bcs = bc_ci + [bc_phi_electrode, bc_phi_ground]
 else:
-    # Without BV: original boundary conditions
+    # Dirichlet bcs
     phi0 = 0.0
     bc_phi = DirichletBC(W.sub(n), Constant(phi0), 1)
     bc_ci = [DirichletBC(W.sub(i), Constant(c0), 3) for i in range(n)]
@@ -141,7 +163,7 @@ J = derivative(F_res, U)
 for i in range(n):
     U_prev.sub(i).assign(Constant(c0))
 
-if use_butler_volmer:
+if use_butler_volmer or use_robin:
     # Initialize phi with linear profile for better convergence
     x, y = SpatialCoordinate(mesh)
     phi_init = phi_applied * (1 - y)  # linear: phi_applied at y=0, 0 at y=1
@@ -190,9 +212,15 @@ print(f"Time step dt = {dt}")
 snapshots = {'t': [], 'c0': [], 'c1': [], 'phi': []}
 
 # Open VTK files for time series output
-bv_suffix = "_bv" if use_butler_volmer else "_no_bv"
-phi_file = VTKFile(f"phi{bv_suffix}.pvd")
-c_files = [VTKFile(f"c{i}{bv_suffix}.pvd") for i in range(n)]
+if use_butler_volmer:
+    suffix = "_bv"
+elif use_robin:
+    suffix = "_robin"
+else:
+    suffix = "_default"
+
+phi_file = VTKFile(f"phi{suffix}.pvd")
+c_files = [VTKFile(f"c{i}{suffix}.pvd") for i in range(n)]
 
 for step in range(num_steps):
     # Solve for current time step
@@ -352,3 +380,11 @@ We want to be able to find the value of Si at each of the mesh's nodes.
 
 The source term will go in the weak formulation, so we need to compute Si prior to implementing the manufactured solution.
 '''
+
+
+
+"""
+If there is a strong potential gradient, that potential gradient is either supporting or inhibiting diffusion.
+From the gif, the concentration seems to be diffusing upward, which seems like a strong break in symmetry.
+
+"""

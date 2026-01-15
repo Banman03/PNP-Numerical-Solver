@@ -79,9 +79,7 @@ phi_prev = split(U_prev)[-1]
 v_list = v_tests[:-1]
 w = v_tests[-1]
 
-# ============================================================================
 # Weak formulation with source terms
-# ============================================================================
 
 t_current = Constant(0.0)  # Will be updated at each time step
 
@@ -117,9 +115,7 @@ F_res -= sum( Constant(z_vals[i])*F * ci[i]*w for i in range(n) )*dx_domain
 # MMS source term for Poisson
 F_res -= source_phi_expr * w * dx_domain
 
-# ============================================================================
 # Boundary conditions using exact solutions
-# ============================================================================
 
 c_exact_exprs, phi_exact_expr = get_exact_solutions(mesh, t_current)
 
@@ -128,9 +124,7 @@ bc_ci = [DirichletBC(W.sub(i), c_exact_exprs[i], "on_boundary") for i in range(n
 bc_phi = DirichletBC(W.sub(n), phi_exact_expr, "on_boundary")
 bcs = bc_ci + [bc_phi]
 
-# ============================================================================
 # Solver setup
-# ============================================================================
 
 J = derivative(F_res, U)
 problem = NonlinearVariationalProblem(F_res, U, bcs=bcs, J=J)
@@ -146,9 +140,7 @@ solver_params = {
 
 solver = NonlinearVariationalSolver(problem, solver_parameters=solver_params)
 
-# ============================================================================
 # Initial conditions from exact solution at t=0
-# ============================================================================
 
 t_init = 0.0
 t_current.assign(t_init)
@@ -164,9 +156,7 @@ U_prev.sub(n).interpolate(phi_exact_init)
 # Copy to current solution
 U.assign(U_prev)
 
-# ============================================================================
 # Time-stepping loop with error computation
-# ============================================================================
 
 print(f"Starting time evolution: {num_steps} steps")
 print(f"Time step dt = {dt}, end time = {t_end}\n")
@@ -236,9 +226,7 @@ for step in range(num_steps):
     # Update previous solution for next time step
     U_prev.assign(U)
 
-# ============================================================================
 # Final error report
-# ============================================================================
 
 print("="*70)
 print("FINAL ERROR SUMMARY (at t = {:.4f})".format(t))
