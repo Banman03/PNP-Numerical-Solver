@@ -1,7 +1,6 @@
 from firedrake import *
 import argparse
-import matplotlib.pyplot as plt
-from firedrake.pyplot import tripcolor, tricontour
+from pnp_plotter import plot_solutions, create_animations
 
 parser = argparse.ArgumentParser(
     description='PNP solver with optional Butler-Volmer boundary conditions',
@@ -35,7 +34,7 @@ R = 8.314462618
 T = 298.15
 F_over_RT = F/(R*T)
 
-D_vals = [2.0, 1.0]
+D_vals = [1.0, 1.0]
 z_vals = [1, -1]
 a_vals = [0.0, 0.0]
 
@@ -157,9 +156,9 @@ for i in range(n):
 if use_butler_volmer or use_robin:
     # Initialize phi with linear profile for better convergence
     x, y = SpatialCoordinate(mesh)
-    phi_init = phi_applied * (1 - y)  # linear: phi_applied at y=0, 0 at y=1
+    phi_init = phi_applied * (1 - y)
     U_prev.sub(n).interpolate(phi_init)
-    U.assign(U_prev)  # Initialize U as well
+    U.assign(U_prev)
 else:
     # Original: uniform phi=0
     U_prev.sub(n).assign(Constant(0.0))
@@ -174,23 +173,13 @@ solver_params = {
     'snes_max_it': 100,
     'snes_rtol': 1e-6,
     'snes_atol': 1e-6,
-    'snes_linesearch_type': 'bt',  # backtracking line search
+    'snes_linesearch_type': 'bt',
     # 'snes_monitor': None,
     'ksp_type': 'gmres',
-    'ksp_max_it': 200,
+    'ksp_max_it': 200, 
     'ksp_rtol': 1e-6,
     'pc_type': 'ilu',
 }
-# else:
-#     # Original solver parameters
-#     solver_params = {
-#         'snes_type': 'newtonls',
-#         'snes_max_it': 50,
-#         'snes_rtol': 1e-9,
-#         'ksp_type': 'preonly',
-#         'pc_type': 'fieldsplit',
-#         'pc_fieldsplit_type': 'additive',
-    # }
 
 solver = NonlinearVariationalSolver(problem, solver_parameters=solver_params)
 
@@ -223,42 +212,7 @@ phi_data = U_prev.sub(n).dat.data_ro
 print(f"Potential phi: Min={phi_data.min():.4f}, Max={phi_data.max():.4f}, Mean={phi_data.mean():.4f}")
 print(f"{'*'*60}\n")
 
-
-# Create figure with subplots for each field
-fig, axes = plt.subplots(1, 3, figsize=(15, 4))
-
-# Plot concentration of species 0
-tripcolor(U_prev.sub(0), axes=axes[0], cmap='viridis')
-axes[0].set_title(f'Concentration c₀ (z={z_vals[0]:+d}) at t={t:.3f}')
-axes[0].set_xlabel('x')
-axes[0].set_ylabel('y')
-axes[0].set_aspect('equal')
-plt.colorbar(axes[0].collections[0], ax=axes[0], label='c₀')
-
-# Plot concentration of species 1
-tripcolor(U_prev.sub(1), axes=axes[1], cmap='plasma')
-axes[1].set_title(f'Concentration c₁ (z={z_vals[1]:+d}) at t={t:.3f}')
-axes[1].set_xlabel('x')
-axes[1].set_ylabel('y')
-axes[1].set_aspect('equal')
-plt.colorbar(axes[1].collections[0], ax=axes[1], label='c₁')
-
-# Plot electric potential
-tripcolor(U_prev.sub(2), axes=axes[2], cmap='coolwarm')
-axes[2].set_title(f'Electric Potential phi at t={t:.3f}')
-axes[2].set_xlabel('x')
-axes[2].set_ylabel('y')
-axes[2].set_aspect('equal')
-plt.colorbar(axes[2].collections[0], ax=axes[2], label='phi')
-
-bv_status = "with BV" if use_butler_volmer else "no BV"
-fig.suptitle(f'PNP Solution ({bv_status}): {num_steps} time steps, dt={dt}', fontsize=14, y=1.02)
-plt.tight_layout()
-output_png = f'pnp_solution_init.png'
-plt.savefig(output_png, dpi=300, bbox_inches='tight')
-print(f"Saved final state visualization to {output_png}")
-plt.show()
-
+plot_solutions(U_prev, z_vals, mode, num_steps, dt)
 
 for step in range(num_steps):
     # Solve for current time step
@@ -288,112 +242,9 @@ for step in range(num_steps):
 
 print(f"Time evolution complete! Final time: t = {t:.4f}")
 
-# Extract actual Function objects for final visualization
-c0_func = U.sub(0)
-c1_func = U.sub(1)
-phi_func = U.sub(2)
+plot_solutions(U_prev, z_vals, mode, num_steps, dt)
 
-# Create figure with subplots for each field
-fig, axes = plt.subplots(1, 3, figsize=(15, 4))
-
-# Plot concentration of species 0
-tripcolor(c0_func, axes=axes[0], cmap='viridis')
-axes[0].set_title(f'Concentration c₀ (z={z_vals[0]:+d}) at t={t:.3f}')
-axes[0].set_xlabel('x')
-axes[0].set_ylabel('y')
-axes[0].set_aspect('equal')
-plt.colorbar(axes[0].collections[0], ax=axes[0], label='c₀')
-
-# Plot concentration of species 1
-tripcolor(c1_func, axes=axes[1], cmap='plasma')
-axes[1].set_title(f'Concentration c₁ (z={z_vals[1]:+d}) at t={t:.3f}')
-axes[1].set_xlabel('x')
-axes[1].set_ylabel('y')
-axes[1].set_aspect('equal')
-plt.colorbar(axes[1].collections[0], ax=axes[1], label='c₁')
-
-# Plot electric potential
-tripcolor(phi_func, axes=axes[2], cmap='coolwarm')
-axes[2].set_title(f'Electric Potential phi at t={t:.3f}')
-axes[2].set_xlabel('x')
-axes[2].set_ylabel('y')
-axes[2].set_aspect('equal')
-plt.colorbar(axes[2].collections[0], ax=axes[2], label='phi')
-
-bv_status = "with BV" if use_butler_volmer else "no BV"
-fig.suptitle(f'PNP Solution ({bv_status}): {num_steps} time steps, dt={dt}', fontsize=14, y=1.02)
-plt.tight_layout()
-output_png = f'pnp_solution{mode}.png'
-plt.savefig(output_png, dpi=300, bbox_inches='tight')
-print(f"Saved final state visualization to {output_png}")
-plt.show()
-
-# --- Create animations
-print(f"\nGenerating animations from {len(snapshots['t'])} snapshots...")
-import matplotlib.animation as animation
-import numpy as np
-
-# Get mesh coordinates for plotting
-coords = mesh.coordinates.dat.data_ro
-x_coords = coords[:, 0]
-y_coords = coords[:, 1]
-
-# Create triangulation for plotting
-import matplotlib.tri as tri
-triangulation = tri.Triangulation(x_coords, y_coords)
-
-def create_animation(data_list, title, cmap, filename):
-    """Create animation for a single field"""
-    fig_anim, ax = plt.subplots(figsize=(6, 5))
-
-    # Determine global colorbar limits
-    vmin = min(np.min(d) for d in data_list)
-    vmax = max(np.max(d) for d in data_list)
-
-    # Initial plot
-    tpc = ax.tripcolor(triangulation, data_list[0], cmap=cmap, vmin=vmin, vmax=vmax)
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_aspect('equal')
-    time_text = ax.text(0.02, 0.95, '', transform=ax.transAxes,
-                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-    plt.colorbar(tpc, ax=ax, label=title)
-
-    def update(frame):
-        ax.clear()
-        tpc = ax.tripcolor(triangulation, data_list[frame], cmap=cmap, vmin=vmin, vmax=vmax)
-        ax.set_xlabel('x')
-        ax.set_ylabel('y')
-        ax.set_aspect('equal')
-        ax.set_title(title)
-        time_text = ax.text(0.02, 0.95, f't = {snapshots["t"][frame]:.3f}',
-                           transform=ax.transAxes,
-                           bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-        return tpc, time_text
-
-    anim = animation.FuncAnimation(fig_anim, update, frames=len(data_list),
-                                   interval=100, blit=False, repeat=True)
-
-    # Try to save as MP4, fall back to GIF if ffmpeg not available
-    try:
-        anim.save(filename + '.mp4', writer='ffmpeg', fps=10, dpi=150)
-        print(f"  Saved {filename}.mp4")
-    except:
-        try:
-            anim.save(filename + '.gif', writer='pillow', fps=10)
-            print(f"  Saved {filename}.gif (ffmpeg not available)")
-        except Exception as e:
-            print(f"  Warning: Could not save animation for {title}: {e}")
-
-    plt.close(fig_anim)
-
-# Create animations for each field
-create_animation(snapshots['c0'], 'Concentration c₀', 'viridis', f'c0_animation{mode}')
-create_animation(snapshots['c1'], 'Concentration c₁', 'plasma', f'c1_animation{mode}')
-create_animation(snapshots['phi'], 'Electric Potential phi', 'coolwarm', f'phi_animation{mode}')
-
-print("Animation generation complete!")
-    
+create_animations(snapshots, mode, mesh)
     
     
 '''
