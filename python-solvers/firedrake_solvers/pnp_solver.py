@@ -1,6 +1,7 @@
 from firedrake import *
 import argparse
 from pnp_plotter import plot_solutions, create_animations
+from pnp_utils import 
 
 parser = argparse.ArgumentParser(
     description='PNP solver with optional Butler-Volmer boundary conditions',
@@ -70,7 +71,6 @@ splitPrev = split(U_prev)
 
 v_tests = TestFunctions(W)
 
-# Break out component species
 ci = split(U)[:-1]
 phi = split(U)[-1]
 ci_prev = split(U_prev)[:-1]
@@ -124,7 +124,6 @@ elif use_robin:
         c = ci[i]
         F_res += kappa * (c - c_inf) * v * ds(electrode_marker)
 
-# Poisson residual
 eps = Constant(1.0)
 phi_test = w
 F_res += eps*dot(grad(phi), grad(phi_test))*dx
@@ -132,7 +131,6 @@ F_res -= sum( Constant(z_vals[i])*F * ci[i]*phi_test for i in range(n) )*dx
 
 c0 = 1.0
 
-# Boundary conditions
 if use_butler_volmer or use_robin:
     # With BV: electrode at phi_applied, ground at opposite side
     bc_phi_electrode = DirichletBC(W.sub(n), phi_applied, 1)
@@ -146,105 +144,84 @@ else:
     bc_ci = [DirichletBC(W.sub(i), Constant(c0), 3) for i in range(n)]
     bcs = bc_ci + [bc_phi]
 
-# --- form the Jacobian automatically
 J = derivative(F_res, U)
 
-# --- initial condition: fill U_prev with initial c's and phi
 for i in range(n):
     U_prev.sub(i).assign(Constant(c0))
 
 if use_butler_volmer or use_robin:
-    # Initialize phi with linear profile for better convergence
     x, y = SpatialCoordinate(mesh)
     phi_init = phi_applied * (1 - y)
     U_prev.sub(n).interpolate(phi_init)
     U.assign(U_prev)
 else:
-    # Original: uniform phi=0
     U_prev.sub(n).assign(Constant(0.0))
 
-# --- solve monolithically using NonlinearVariationalSolver
 problem = NonlinearVariationalProblem(F_res, U, bcs=bcs, J=J)
 
 # if use_butler_volmer or use_robin:
-    # More robust solver parameters for BV nonlinearity
-solver_params = {
-    'snes_type': 'newtonls',
-    'snes_max_it': 100,
-    'snes_rtol': 1e-6,
-    'snes_atol': 1e-6,
-    'snes_linesearch_type': 'bt',
-    # 'snes_monitor': None,
-    'ksp_type': 'gmres',
-    'ksp_max_it': 200, 
-    'ksp_rtol': 1e-6,
-    'pc_type': 'ilu',
-}
+solver_param_array = generate_solver_params()
+    
+for sp in solver_param_array:
+    print(f"Testing Configuration {i}: {sp['snes_type']} + {sp['snes_linesearch_type']}")
+    solver = NonlinearVariationalSolver(problem, solver_parameters=sp)
 
-solver = NonlinearVariationalSolver(problem, solver_parameters=solver_params)
+    t = 0.0
+    print(f"Starting time evolution: {num_steps} steps from t=0 to t={t_end}")
+    print(f"Time step dt = {dt}")
 
-# --- Time-stepping loop
-t = 0.0
-print(f"Starting time evolution: {num_steps} steps from t=0 to t={t_end}")
-print(f"Time step dt = {dt}")
+    snapshots = {'t': [], 'c0': [], 'c1': [], 'phi': []}
 
-# Storage for animation snapshots
-snapshots = {'t': [], 'c0': [], 'c1': [], 'phi': []}
+    if use_butler_volmer:
+        suffix = "_bv"
+    elif use_robin:
+        suffix = "_robin"
+    else:
+        suffix = "_default"
 
-# Open VTK files for time series output
-if use_butler_volmer:
-    suffix = "_bv"
-elif use_robin:
-    suffix = "_robin"
-else:
-    suffix = "_default"
+    phi_file = VTKFile(f"phi{suffix}.pvd")
+    c_files = [VTKFile(f"c{i}{suffix}.pvd") for i in range(n)]
 
-phi_file = VTKFile(f"phi{suffix}.pvd")
-c_files = [VTKFile(f"c{i}{suffix}.pvd") for i in range(n)]
+    print(f"\n{'*'*20} INITIAL CONDITIONS VERIFICATION {'*'*20}")
 
-print(f"\n{'*'*20} INITIAL CONDITIONS VERIFICATION {'*'*20}")
+    for i in range(n):
+        c_data = U_prev.sub(i).dat.data_ro
+        print(f"Species c{i}: Min={c_data.min():.4f}, Max={c_data.max():.4f}, Mean={c_data.mean():.4f}")
 
-for i in range(n):
-    c_data = U_prev.sub(i).dat.data_ro
-    print(f"Species c{i}: Min={c_data.min():.4f}, Max={c_data.max():.4f}, Mean={c_data.mean():.4f}")
+    phi_data = U_prev.sub(n).dat.data_ro
+    print(f"Potential phi: Min={phi_data.min():.4f}, Max={phi_data.max():.4f}, Mean={phi_data.mean():.4f}")
+    print(f"{'*'*60}\n")
 
-phi_data = U_prev.sub(n).dat.data_ro
-print(f"Potential phi: Min={phi_data.min():.4f}, Max={phi_data.max():.4f}, Mean={phi_data.mean():.4f}")
-print(f"{'*'*60}\n")
+    # plot initial conditions if we want
+    # plot_solutions(U_prev, z_vals, mode, num_steps, dt)
 
-plot_solutions(U_prev, z_vals, mode, num_steps, dt)
+    for step in range(num_steps):
+        try:
+            solver.solve()
+        except Exception as e:
+            print(f"Failed to converge: {e}")
 
-for step in range(num_steps):
-    # Solve for current time step
-    solver.solve()
+        t += dt
 
-    # Update time
-    t += dt
+        if step % output_interval == 0 or step == num_steps - 1:
+            print(f"  Step {step+1}/{num_steps}, t = {t:.4f}")
 
-    # Progress output
-    if step % output_interval == 0 or step == num_steps - 1:
-        print(f"  Step {step+1}/{num_steps}, t = {t:.4f}")
+            phi_file.write(U.sub(n), time=t)
+            for i in range(n):
+                c_files[i].write(U.sub(i), time=t)
 
-        # Write VTK output at intervals
-        phi_file.write(U.sub(n), time=t)
-        for i in range(n):
-            c_files[i].write(U.sub(i), time=t)
+            snapshots['t'].append(t)
+            snapshots['c0'].append(U.sub(0).dat.data_ro.copy())
+            snapshots['c1'].append(U.sub(1).dat.data_ro.copy())
+            snapshots['phi'].append(U.sub(n).dat.data_ro.copy())
 
-        # Store snapshots for animation
-        snapshots['t'].append(t)
-        # Copy function data at vertices for plotting
-        snapshots['c0'].append(U.sub(0).dat.data_ro.copy())
-        snapshots['c1'].append(U.sub(1).dat.data_ro.copy())
-        snapshots['phi'].append(U.sub(n).dat.data_ro.copy())
+        U_prev.assign(U)
 
-    # Copy current solution to previous for next time step
-    U_prev.assign(U)
+    print(f"Time evolution complete! Final time: t = {t:.4f}")
 
-print(f"Time evolution complete! Final time: t = {t:.4f}")
+    plot_solutions(U_prev, z_vals, mode, num_steps, dt)
 
-plot_solutions(U_prev, z_vals, mode, num_steps, dt)
-
-create_animations(snapshots, mode, mesh)
+    create_animations(snapshots, mode, mesh)
     
     
 '''
