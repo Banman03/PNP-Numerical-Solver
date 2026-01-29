@@ -1,18 +1,9 @@
-from firedrake import *
 import itertools
 
 def generate_solver_params():
-    """
-    Generates a list of solver parameter dictionaries for testing 
-    convergence on PNP equations.
-    """
-    snes_types = ['newtonls', 'newtonal'] 
+    snes_types = ['newtonls', 'newtontr', 'ngmres'] 
+    line_searches = ['bt', 'l2', 'cp', 'bisection']
     
-    line_searches = ['bt', 'l2', 'basic']
-    
-    # 3. Linear Solver (KSP) and Preconditioner (PC) pairs
-    # Direct solvers are more robust but also memory intensive; 
-    # Iterative solvers (GMRES) are faster but need good PCs.
     ksp_pc_pairs = [
         {'ksp_type': 'preonly', 'pc_type': 'lu', 'pc_factor_mat_solver_type': 'mumps'},
         {'ksp_type': 'gmres', 'pc_type': 'ilu', 'ksp_rtol': 1e-7},
@@ -24,13 +15,19 @@ def generate_solver_params():
     for snes, ls, kp in itertools.product(snes_types, line_searches, ksp_pc_pairs):
         params = {
             'snes_type': snes,
-            'snes_linesearch_type': ls,
             'snes_max_it': 100,
             'snes_atol': 1e-8,
             'snes_rtol': 1e-8,
-            'snes_monitor': None,
         }
+        
+        if snes != 'newtontr':
+            params['snes_linesearch_type'] = ls
+            
         params.update(kp)
+        
+        if snes == 'newtontr' and ls != line_searches[0]:
+            continue
+            
         combinations.append(params)
         
     return combinations

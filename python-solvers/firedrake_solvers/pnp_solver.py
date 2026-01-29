@@ -1,7 +1,17 @@
 from firedrake import *
 import argparse
-from pnp_plotter import plot_solutions, create_animations
-from pnp_utils import 
+import json
+
+# sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# print("available files: ", os.listdir())
+
+try:
+    from pnp_plotter import plot_solutions, create_animations
+    from pnp_utils import generate_solver_params
+except ImportError:
+    from firedrake_solvers.pnp_plotter import plot_solutions, create_animations
+    from firedrake_solvers.pnp_utils import generate_solver_params
 
 parser = argparse.ArgumentParser(
     description='PNP solver with optional Butler-Volmer boundary conditions',
@@ -157,13 +167,19 @@ if use_butler_volmer or use_robin:
 else:
     U_prev.sub(n).assign(Constant(0.0))
 
-problem = NonlinearVariationalProblem(F_res, U, bcs=bcs, J=J)
 
 # if use_butler_volmer or use_robin:
 solver_param_array = generate_solver_params()
     
+U_initial_state = Function(W).assign(U_prev)
+    
 for sp in solver_param_array:
-    print(f"Testing Configuration {i}: {sp['snes_type']} + {sp['snes_linesearch_type']}")
+    U.assign(U_initial_state)
+    U_prev.assign(U_initial_state)
+    problem = NonlinearVariationalProblem(F_res, U, bcs=bcs, J=J)
+    
+    print("solver params: ", json.dumps(sp, indent=2))
+    # print(f"Testing Configuration {i}: {sp['snes_type']} + {sp['snes_linesearch_type']}")
     solver = NonlinearVariationalSolver(problem, solver_parameters=sp)
 
     t = 0.0
@@ -200,6 +216,7 @@ for sp in solver_param_array:
             solver.solve()
         except Exception as e:
             print(f"Failed to converge: {e}")
+            break
 
         t += dt
 
@@ -219,9 +236,9 @@ for sp in solver_param_array:
 
     print(f"Time evolution complete! Final time: t = {t:.4f}")
 
-    plot_solutions(U_prev, z_vals, mode, num_steps, dt)
+    # plot_solutions(U_prev, z_vals, mode, num_steps, dt, t)
 
-    create_animations(snapshots, mode, mesh)
+    # create_animations(snapshots, mode, mesh)
     
     
 '''
