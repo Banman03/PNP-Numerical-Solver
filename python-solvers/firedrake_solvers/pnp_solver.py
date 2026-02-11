@@ -7,11 +7,15 @@ import json
 # print("available files: ", os.listdir())
 
 try:
-    from pnp_plotter import plot_solutions, create_animations
+    from pnp_plotter import plot_solutions, create_animations, prepare_results_folder
     from pnp_utils import generate_solver_params
 except ImportError:
-    from firedrake_solvers.pnp_plotter import plot_solutions, create_animations
+    from firedrake_solvers.pnp_plotter import plot_solutions, create_animations, prepare_results_folder
     from firedrake_solvers.pnp_utils import generate_solver_params
+
+results_dir = "firedrake_solvers/solver_results_temp"
+
+prepare_results_folder(results_dir)
 
 parser = argparse.ArgumentParser(
     description='PNP solver with optional Butler-Volmer boundary conditions',
@@ -35,10 +39,10 @@ print(f"{'='*60}\n")
 
 n_species = n = 4
 order = 1
-dt = 1e-3
-t_end = 1.0
+dt = 1e-8
+t_end = 1e-5
 num_steps = int(t_end / dt)
-output_interval = 50
+output_interval = 10
 
 F = 96485.3329
 R = 8.314462618
@@ -46,11 +50,11 @@ T = 298.15
 F_over_RT = F/(R*T)
 
 # Example for a Lithium Sulfate system (Li+, SO4 2-, H+, OH-)
-z_vals = [1, -2, 1, -1] # Li, SO4, H, OH
+z_vals = [1, -2, 1, -1]
 D_vals = [1.03e-9, 1.07e-9, 9.311e-9, 5.273e-9]
-a_vals = [0.764, 1.466, 0.56, 0.60]
+a_vals = [0.45, 3.15, 0.18, 0.22]
 
-phi_applied = Constant(0.05)
+phi_applied = Constant(0.5)
 
 # Parameters for unique BCs
 if use_butler_volmer:
@@ -63,9 +67,11 @@ elif use_robin:
     # kappa: Mass transfer coefficient (m/s)
     # c_inf: Ambient/Bulk concentration
     kappa = Constant(1.0)
-    c_inf = Constant(1.0)
+    c_inf = Constant(0.01)
 
+L_scale = 50e-9
 mesh = UnitSquareMesh(32, 32)
+mesh.coordinates.dat.data[:] *= L_scale
 ds = Measure("ds", domain=mesh)
 
 electrode_marker = 1
@@ -94,8 +100,10 @@ w = v_tests[-1]
 # mu = kT * ln(1 - sum_j a_j * c_j)
 kB = Constant(1.380649e-23)
 kBT = Constant(R*T)
-sum_a_c = sum( Constant(a_vals[i]**3) * ci[i] for i in range(n) )
-mu_steric = kBT * ln(1 - sum_a_c)   # if a_vals are zero (no steric effects), this is irrelevant, although this isn't the case in real systems
+
+unit_conv = Constant(0.6022) 
+sum_a_c = sum( Constant(a_vals[i]) * (ci[i] * unit_conv) for i in range(n) )
+mu_steric = ln(1 - sum_a_c)
 
 F_res = 0
 for i in range(n):
@@ -108,7 +116,7 @@ for i in range(n):
     F_res += ( (c - c_old)/dt * v )*dx
 
     # diffusion + drift (no steric)
-    drift_potential = F_over_RT * z * phi# + mu_steric
+    drift_potential = F_over_RT * z * phi + mu_steric
     Jflux = D*(grad(c) + c * grad(drift_potential))
     F_res += dot(Jflux, grad(v))*dx
 
@@ -134,12 +142,12 @@ elif use_robin:
         c = ci[i]
         F_res += kappa * (c - c_inf) * v * ds(electrode_marker)
 
-eps = Constant(1.0)
+eps = Constant(1e-8)
 phi_test = w
 F_res += eps*dot(grad(phi), grad(phi_test))*dx
 F_res -= sum( Constant(z_vals[i])*F * ci[i]*phi_test for i in range(n) )*dx
 
-c0 = 1.0
+c0 = 0.1
 
 if use_butler_volmer or use_robin:
     # With BV: electrode at phi_applied, ground at opposite side
@@ -189,7 +197,7 @@ for i, sp in enumerate(solver_param_array):
     print(f"Starting time evolution: {num_steps} steps from t=0 to t={t_end}")
     print(f"Time step dt = {dt}")
 
-    snapshots = {'t': [], 'c0': [], 'c1': [], 'phi': []}
+    snapshots = {'t': [], 'c0': [], 'c1': [], 'c2': [], 'c3': [], 'phi': []}
 
     if use_butler_volmer:
         suffix = "_bv"
@@ -233,15 +241,17 @@ for i, sp in enumerate(solver_param_array):
             snapshots['t'].append(t)
             snapshots['c0'].append(U.sub(0).dat.data_ro.copy())
             snapshots['c1'].append(U.sub(1).dat.data_ro.copy())
+            snapshots['c2'].append(U.sub(2).dat.data_ro.copy())
+            snapshots['c3'].append(U.sub(3).dat.data_ro.copy())            
             snapshots['phi'].append(U.sub(n).dat.data_ro.copy())
 
         U_prev.assign(U)
 
     print(f"Time evolution complete! Final time: t = {t:.4f}")
 
-    # plot_solutions(U_prev, z_vals, mode, num_steps, dt, t)
+    plot_solutions(U_prev, z_vals, mode, num_steps, dt, t, results_dir, n)
 
-    # create_animations(snapshots, mode, mesh)
+    create_animations(snapshots, mode, mesh, results_dir)
     
     
 '''
