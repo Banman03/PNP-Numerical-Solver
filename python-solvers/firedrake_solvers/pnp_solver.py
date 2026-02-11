@@ -33,7 +33,7 @@ print(f"\n{'='*60}")
 print(f"Butler-Volmer boundary conditions: {'ENABLED' if use_butler_volmer else 'DISABLED'}")
 print(f"{'='*60}\n")
 
-n_species = n = 2
+n_species = n = 4
 order = 1
 dt = 1e-3
 t_end = 1.0
@@ -45,15 +45,16 @@ R = 8.314462618
 T = 298.15
 F_over_RT = F/(R*T)
 
-D_vals = [2.0, 1.0]
-z_vals = [1, -1]
-a_vals = [0.0, 0.0]
+# Example for a Lithium Sulfate system (Li+, SO4 2-, H+, OH-)
+z_vals = [1, -2, 1, -1] # Li, SO4, H, OH
+D_vals = [1.03e-9, 1.07e-9, 9.311e-9, 5.273e-9]
+a_vals = [0.764, 1.466, 0.56, 0.60]
 
 phi_applied = Constant(0.05)
 
 # Parameters for unique BCs
 if use_butler_volmer:
-    j0 = Constant(0.01)
+    j0 = Constant(0.1)
     alpha = Constant(0.5)
     n_electrons = Constant(1.0)
     phi_eq = Constant(0.0)
@@ -93,9 +94,8 @@ w = v_tests[-1]
 # mu = kT * ln(1 - sum_j a_j * c_j)
 kB = Constant(1.380649e-23)
 kBT = Constant(R*T)
-sum_a_c = sum( Constant(a_vals[i]) * ci[i] for i in range(n) )
-# mu_steric = kBT * ln(1 - sum_a_c)   # if a_vals are zero, this term vanishes
-# grad(mu_steric) computed by UFL via grad(mu_steric)
+sum_a_c = sum( Constant(a_vals[i]**3) * ci[i] for i in range(n) )
+mu_steric = kBT * ln(1 - sum_a_c)   # if a_vals are zero (no steric effects), this is irrelevant, although this isn't the case in real systems
 
 F_res = 0
 for i in range(n):
@@ -108,7 +108,7 @@ for i in range(n):
     F_res += ( (c - c_old)/dt * v )*dx
 
     # diffusion + drift (no steric)
-    drift_potential = F_over_RT * z * phi # + mu_steric
+    drift_potential = F_over_RT * z * phi# + mu_steric
     Jflux = D*(grad(c) + c * grad(drift_potential))
     F_res += dot(Jflux, grad(v))*dx
 
@@ -173,7 +173,10 @@ solver_param_array = generate_solver_params()
     
 U_initial_state = Function(W).assign(U_prev)
     
-for sp in solver_param_array:
+for i, sp in enumerate(solver_param_array):
+    if i is not 0: # I have added this for quick testing
+        break
+    
     U.assign(U_initial_state)
     U_prev.assign(U_initial_state)
     problem = NonlinearVariationalProblem(F_res, U, bcs=bcs, J=J)
