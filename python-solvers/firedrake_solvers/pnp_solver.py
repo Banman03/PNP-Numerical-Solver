@@ -1,6 +1,7 @@
 from firedrake import *
 import argparse
 import json
+import math as m
 
 # sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -39,10 +40,10 @@ print(f"{'='*60}\n")
 
 n_species = n = 4
 order = 1
-dt = 1e-8
-t_end = 1e-5
+dt = 1e-7
+t_end = 2e-6
 num_steps = int(t_end / dt)
-output_interval = 10
+output_interval = 2
 
 F = 96485.3329
 R = 8.314462618
@@ -52,7 +53,13 @@ F_over_RT = F/(R*T)
 # Example for a Lithium Sulfate system (Li+, SO4 2-, H+, OH-)
 z_vals = [1, -2, 1, -1]
 D_vals = [1.03e-9, 1.07e-9, 9.311e-9, 5.273e-9]
-a_vals = [0.45, 3.15, 0.18, 0.22]
+
+# effected solvated radius
+a_rad = [0.382e-9, 0.733e-9, 0.28e-9, 0.3e-9]
+a_vol = [(4/3)*m.pi*(a**3) for a in a_rad]
+a_vals = [6.022e23*a for a in a_vol]
+
+print("a vals: ",a_vals)
 
 phi_applied = Constant(0.5)
 
@@ -96,9 +103,7 @@ phi_prev = split(U_prev)[-1]
 v_list = v_tests[:-1]
 w = v_tests[-1]
 
-# We are not using the mu term for now (solver was failing to converge)
 # mu = kT * ln(1 - sum_j a_j * c_j)
-kB = Constant(1.380649e-23)
 kBT = Constant(R*T)
 
 unit_conv = Constant(0.6022) 
@@ -115,7 +120,6 @@ for i in range(n):
     # Backward Euler time derivative
     F_res += ( (c - c_old)/dt * v )*dx
 
-    # diffusion + drift (no steric)
     drift_potential = F_over_RT * z * phi + mu_steric
     Jflux = D*(grad(c) + c * grad(drift_potential))
     F_res += dot(Jflux, grad(v))*dx
@@ -208,6 +212,11 @@ for i, sp in enumerate(solver_param_array):
 
     phi_file = VTKFile(f"phi{suffix}.pvd")
     c_files = [VTKFile(f"c{i}{suffix}.pvd") for i in range(n)]
+    
+    # will hold the values of the steric effects for inspection
+    V_monitor = FunctionSpace(mesh, "CG", order)
+    mu_monitor = Function(V_monitor, name="StericPotential")
+    mu_file = VTKFile(f"mu_steric{suffix}.pvd")
 
     print(f"\n{'*'*20} INITIAL CONDITIONS VERIFICATION {'*'*20}")
 
@@ -244,6 +253,15 @@ for i, sp in enumerate(solver_param_array):
             snapshots['c2'].append(U.sub(2).dat.data_ro.copy())
             snapshots['c3'].append(U.sub(3).dat.data_ro.copy())            
             snapshots['phi'].append(U.sub(n).dat.data_ro.copy())
+
+            mu_monitor.project(mu_steric)
+            mu_file.write(mu_monitor, time=t)
+            mu_data = mu_monitor.dat.data_ro
+            sum_a_c_val = assemble(sum_a_c * dx) / assemble(Constant(1.0) * dx(domain=mesh))
+            
+            print(f"  [Steric Check] Step {step+1}:")
+            print(f"    - mu_steric: Min={mu_data.min():.10f}, Max={mu_data.max():.10f}, Mean={mu_data.mean():.10f}")
+            print(f"    - Volumetric Occupancy (sum a*c): {sum_a_c_val:.10f}")
 
         U_prev.assign(U)
 
