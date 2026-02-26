@@ -129,6 +129,8 @@ sum_a_c = sum( Constant(a_tilde[i]) * ci[i] for i in range(n) )
 mu_steric = ln(1 - sum_a_c)
 
 F_res = 0
+
+# Nernst-Planck Equation
 for i in range(n):
     c = ci[i]
     c_old = ci_prev[i]
@@ -142,7 +144,7 @@ for i in range(n):
     Jflux = D*(grad(c) + c * grad(drift_potential))
     F_res += dot(Jflux, grad(v))*dx
 
-# Poisson Equation (Dimensionless)
+# Poisson Equation
 phi_test = w
 F_res += dot(grad(phi), grad(phi_test))*dx
 F_res -= beta * sum( Constant(z_vals[i]) * ci[i] * phi_test for i in range(n) )*dx
