@@ -214,13 +214,13 @@ J = derivative(F_res, U)
 for i in range(n):
     U_prev.sub(i).assign(Constant(c0_tilde))
 
-if use_butler_volmer or use_robin:
-    x, y = SpatialCoordinate(mesh)
-    phi_init = phi_applied_tilde * (1 - y)
-    U_prev.sub(n).interpolate(phi_init)
-    U.assign(U_prev)
-else:
-    U_prev.sub(n).assign(Constant(0.0))
+# if use_butler_volmer or use_robin:
+#     x, y = SpatialCoordinate(mesh)
+#     phi_init = phi_applied_tilde * (1 - y)
+#     U_prev.sub(n).interpolate(phi_init)
+#     U.assign(U_prev)
+# else:
+U_prev.sub(n).assign(Constant(0.0))
 
 
 # if use_butler_volmer or use_robin:
