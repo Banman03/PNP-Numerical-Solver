@@ -40,10 +40,10 @@ print(f"{'='*60}\n")
 
 n_species = n = 4
 order = 1
-dt = 1e-7
+dt = 1e-9
 t_end = 2e-6
-num_steps = int(t_end / dt)
-output_interval = 2
+num_steps = int(t_end / dt) + 1
+output_interval = 50
 
 F = 96485.3329
 R = 8.314462618
@@ -78,8 +78,27 @@ elif use_robin:
 
 L_scale = 50e-9
 mesh = UnitSquareMesh(32, 32)
-mesh.coordinates.dat.data[:] *= L_scale
 ds = Measure("ds", domain=mesh)
+
+t_ref = (L_scale**2) / dt
+dt_tilde = dt / t_ref
+t_end_tilde = t_end / t_ref
+
+c_ref = 0.1
+phi_ref = R * T / F
+print("phi ref: ", phi_ref)
+D_ref = 1e-9
+
+D_tilde = [D / D_ref for D in D_vals]
+print("d tilde: ", D_tilde)
+
+unit_conv = Constant(0.6022) 
+a_tilde = [a * c_ref * unit_conv for a in a_vals]
+
+eps_val = 1e-8
+beta_val = (F * c_ref * (L_scale**2)) / (eps_val * phi_ref)
+print("beta: ", beta_val)
+beta = Constant(beta_val)
 
 electrode_marker = 1
 
@@ -106,8 +125,7 @@ w = v_tests[-1]
 # mu = kT * ln(1 - sum_j a_j * c_j)
 kBT = Constant(R*T)
 
-unit_conv = Constant(0.6022) 
-sum_a_c = sum( Constant(a_vals[i]) * (ci[i] * unit_conv) for i in range(n) )
+sum_a_c = sum( Constant(a_tilde[i]) * ci[i] for i in range(n) )
 mu_steric = ln(1 - sum_a_c)
 
 F_res = 0
@@ -115,18 +133,26 @@ for i in range(n):
     c = ci[i]
     c_old = ci_prev[i]
     v = v_list[i]
-    D = Constant(D_vals[i])
+    D = Constant(D_tilde[i])
     z = Constant(z_vals[i])
-    # Backward Euler time derivative
-    F_res += ( (c - c_old)/dt * v )*dx
+    
+    F_res += ( (c - c_old)/dt_tilde * v )*dx
 
-    drift_potential = F_over_RT * z * phi + mu_steric
+    drift_potential = z * phi + mu_steric
     Jflux = D*(grad(c) + c * grad(drift_potential))
     F_res += dot(Jflux, grad(v))*dx
 
+# Poisson Equation (Dimensionless)
+phi_test = w
+F_res += dot(grad(phi), grad(phi_test))*dx
+F_res -= beta * sum( Constant(z_vals[i]) * ci[i] * phi_test for i in range(n) )*dx
+
 # Unique BC boundary flux
+# phi_applied_tilde = Constant(0.5 / phi_ref)
+phi_applied_tilde = Constant(0.5)
+print("phi applied: ", phi_applied_tilde)
 if use_butler_volmer:
-    eta = phi - phi_applied
+    eta = phi - phi_applied_tilde
     j_BV = j0*( exp(-alpha*n_electrons*F_over_RT*eta) - exp((1-alpha)*n_electrons*F_over_RT*eta) )
 
     for i in range(n):
@@ -146,34 +172,30 @@ elif use_robin:
         c = ci[i]
         F_res += kappa * (c - c_inf) * v * ds(electrode_marker)
 
-eps = Constant(1e-8)
-phi_test = w
-F_res += eps*dot(grad(phi), grad(phi_test))*dx
-F_res -= sum( Constant(z_vals[i])*F * ci[i]*phi_test for i in range(n) )*dx
-
-c0 = 0.1
+c0_tilde = 1.0 # Because initial c0 was 0.1, and 0.1/c_ref = 1.0
 
 if use_butler_volmer or use_robin:
-    # With BV: electrode at phi_applied, ground at opposite side
-    bc_phi_electrode = DirichletBC(W.sub(n), phi_applied, 1)
+    # With BV: electrode at phi_applied_tilde, ground at opposite side
+    bc_phi_electrode = DirichletBC(W.sub(n), phi_applied_tilde, 1)
     bc_phi_ground = DirichletBC(W.sub(n), Constant(0.0), 3)
-    bc_ci = [DirichletBC(W.sub(i), Constant(c0), 3) for i in range(n)]
+    bc_ci = [DirichletBC(W.sub(i), Constant(c0_tilde), 3) for i in range(n)]
     bcs = bc_ci + [bc_phi_electrode, bc_phi_ground]
 else:
     # Dirichlet bcs
+    bc_phi_electrode = DirichletBC(W.sub(n), Constant(0.01), 1)
     phi0 = 0.0
-    bc_phi = DirichletBC(W.sub(n), Constant(phi0), 1)
-    bc_ci = [DirichletBC(W.sub(i), Constant(c0), 3) for i in range(n)]
-    bcs = bc_ci + [bc_phi]
+    # bc_phi = DirichletBC(W.sub(n), Constant(phi0), 1)
+    bc_ci = [DirichletBC(W.sub(i), Constant(c0_tilde), 3) for i in range(n)]
+    bcs = bc_ci + [bc_phi_electrode]
 
 J = derivative(F_res, U)
 
 for i in range(n):
-    U_prev.sub(i).assign(Constant(c0))
+    U_prev.sub(i).assign(Constant(c0_tilde))
 
 if use_butler_volmer or use_robin:
     x, y = SpatialCoordinate(mesh)
-    phi_init = phi_applied * (1 - y)
+    phi_init = phi_applied_tilde * (1 - y)
     U_prev.sub(n).interpolate(phi_init)
     U.assign(U_prev)
 else:
@@ -218,15 +240,15 @@ for i, sp in enumerate(solver_param_array):
     mu_monitor = Function(V_monitor, name="StericPotential")
     mu_file = VTKFile(f"mu_steric{suffix}.pvd")
 
-    print(f"\n{'*'*20} INITIAL CONDITIONS VERIFICATION {'*'*20}")
+    # print(f"\n{'*'*20} INITIAL CONDITIONS VERIFICATION {'*'*20}")
 
-    for i in range(n):
-        c_data = U_prev.sub(i).dat.data_ro
-        print(f"Species c{i}: Min={c_data.min():.4f}, Max={c_data.max():.4f}, Mean={c_data.mean():.4f}")
+    # for i in range(n):
+        # c_data = U_prev.sub(i).dat.data_ro
+        # print(f"Species c{i}: Min={c_data.min():.4f}, Max={c_data.max():.4f}, Mean={c_data.mean():.4f}")
 
-    phi_data = U_prev.sub(n).dat.data_ro
-    print(f"Potential phi: Min={phi_data.min():.4f}, Max={phi_data.max():.4f}, Mean={phi_data.mean():.4f}")
-    print(f"{'*'*60}\n")
+    # phi_data = U_prev.sub(n).dat.data_ro
+    # print(f"Potential phi: Min={phi_data.min():.4f}, Max={phi_data.max():.4f}, Mean={phi_data.mean():.4f}")
+    # print(f"{'*'*60}\n")
 
     # plot initial conditions if we want
     # plot_solutions(U_prev, z_vals, mode, num_steps, dt)
