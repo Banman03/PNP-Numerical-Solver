@@ -151,33 +151,47 @@ F_res -= beta * sum( Constant(z_vals[i]) * ci[i] * phi_test for i in range(n) )*
 # phi_applied_tilde = Constant(0.5 / phi_ref)
 phi_applied_tilde = Constant(0.5)
 print("phi applied: ", phi_applied_tilde)
+J_ref = D_ref * c_ref / L_scale
+
 if use_butler_volmer:
-    eta = phi - phi_applied_tilde
-    j_BV = j0*( exp(-alpha*n_electrons*F_over_RT*eta) - exp((1-alpha)*n_electrons*F_over_RT*eta) )
+    j0_physical = 0.1
+    j0_tilde_val = (j0_physical * L_scale) / (n_electrons.values()[0] * F * J_ref)
+    j0_tilde = Constant(j0_tilde_val)
+    
+    # phi_applied_tilde is the metal potential. phi is the electrolyte potential.
+    eta = phi_applied_tilde - phi - phi_eq
+    
+    j_BV_tilde = j0_tilde * ( exp(-alpha * n_electrons * eta) - exp((1 - alpha) * n_electrons * eta) )
 
     for i in range(n):
         v = v_list[i]
         if i == 0:
-            # Oxidized species: consumed at electrode (negative flux)
-            F_res += ( (1.0/(n_electrons*F)) * j_BV * v )*ds(electrode_marker)
+            F_res += ( j_BV_tilde * v ) * ds(electrode_marker)
         else:
-            # Reduced species: produced at electrode (positive flux)
-            F_res -= ( (1.0/(n_electrons*F)) * j_BV * v )*ds(electrode_marker)
+            F_res -= ( j_BV_tilde * v ) * ds(electrode_marker)
             
 elif use_robin:
-    # Robin Flux: J.n = kappa * (c - c_inf)
-    # Weak form boundary term: + (J.n) * v * ds
+    # Scale kappa: kappa_tilde = kappa * L_ref / D_ref
+    kappa_physical = 1.0
+    kappa_tilde = Constant(kappa_physical * L_scale / D_ref)
+    
+    # c_inf scaled by c_ref
+    c_inf_tilde = Constant(0.01 / c_ref)
+    
     for i in range(n):
         v = v_list[i]
         c = ci[i]
-        F_res += kappa * (c - c_inf) * v * ds(electrode_marker)
+        F_res += kappa_tilde * (c - c_inf_tilde) * v * ds(electrode_marker)
 
-c0_tilde = 1.0 # Because initial c0 was 0.1, and 0.1/c_ref = 1.0
+c0_tilde = 1.0
 
-if use_butler_volmer or use_robin:
-    # With BV: electrode at phi_applied_tilde, ground at opposite side
-    bc_phi_electrode = DirichletBC(W.sub(n), phi_applied_tilde, 1)
+if use_butler_volmer:
     bc_phi_ground = DirichletBC(W.sub(n), Constant(0.0), 3)
+    bc_ci = [DirichletBC(W.sub(i), Constant(c0_tilde), 3) for i in range(n)]
+    bcs = bc_ci + [bc_phi_ground]
+elif use_robin:
+    bc_phi_electrode = DirichletBC(W.sub(n), phi_applied_tilde, 1)
+    bc_phi_ground = DirichletBC(W.sub(n), Constant(0.0), 2)
     bc_ci = [DirichletBC(W.sub(i), Constant(c0_tilde), 3) for i in range(n)]
     bcs = bc_ci + [bc_phi_electrode, bc_phi_ground]
 else:
@@ -185,7 +199,11 @@ else:
     bc_phi_electrode = DirichletBC(W.sub(n), Constant(0.01), 1)
     phi0 = 0.0
     # bc_phi = DirichletBC(W.sub(n), Constant(phi0), 1)
-    bc_ci = [DirichletBC(W.sub(i), Constant(c0_tilde), 3) for i in range(n)]
+    bc_ci = [DirichletBC(W.sub(i), Constant(c0_tilde), 1) for i in range(n)]
+    bc_ci += [DirichletBC(W.sub(i), Constant(c0_tilde), 2) for i in range(n)]
+    bc_ci += [DirichletBC(W.sub(i), Constant(c0_tilde), 3) for i in range(n)]
+    bc_ci += [DirichletBC(W.sub(i), Constant(c0_tilde), 4) for i in range(n)]
+
     bcs = bc_ci + [bc_phi_electrode]
 
 J = derivative(F_res, U)

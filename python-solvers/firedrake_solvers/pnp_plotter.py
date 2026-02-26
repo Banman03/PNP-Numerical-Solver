@@ -74,7 +74,7 @@ def create_animations(snapshots, mode, mesh, results_dir):
         def update(frame):
             ax.clear()
             tpc = ax.tripcolor(triangulation, data_list[frame], cmap=cmap, vmin=vmin, vmax=vmax)
-            ax.set_title(f"{title} | t = {snapshots['t'][frame]:.3f}")
+            ax.set_title(f"{title} | t = {snapshots['t'][frame]:.10f}")
             return tpc,
 
         anim = animation.FuncAnimation(fig_anim, update, frames=len(data_list), interval=100)
