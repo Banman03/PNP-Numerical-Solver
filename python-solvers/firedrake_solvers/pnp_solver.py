@@ -186,13 +186,14 @@ elif use_robin:
 c0_tilde = 1.0
 
 if use_butler_volmer:
-    bc_phi_ground = DirichletBC(W.sub(n), Constant(0.0), 3)
-    bc_ci = [DirichletBC(W.sub(i), Constant(c0_tilde), 3) for i in range(n)]
+    bc_phi_ground = DirichletBC(W.sub(n), Constant(0.0), 2)
+    bc_ci = [DirichletBC(W.sub(i), Constant(c0_tilde), 2) for i in range(n)]
     bcs = bc_ci + [bc_phi_ground]
 elif use_robin:
     bc_phi_electrode = DirichletBC(W.sub(n), phi_applied_tilde, 1)
     bc_phi_ground = DirichletBC(W.sub(n), Constant(0.0), 2)
     bc_ci = [DirichletBC(W.sub(i), Constant(c0_tilde), 3) for i in range(n)]
+    bc_ci += [DirichletBC(W.sub(i), Constant(c0_tilde), 4) for i in range(n)]
     bcs = bc_ci + [bc_phi_electrode, bc_phi_ground]
 else:
     # Dirichlet bcs
